@@ -42,9 +42,44 @@
 
 #include "precomp.hpp"
 #include "opencv2/softcascade_fast.hpp"
-#include <opencv2/imgproc.hpp>
+//#include <opencv2/imgproc.hpp>
+//#include <opencv2/highgui.hpp>
 #include <iostream> 
 
+
+
+
+const char *const cv::softcascade::FastDtModel::ROOT="Fast_Detector";
+const char *const cv::softcascade::FastDtModel::PYRAMID="Pyramid_Setting";
+const char *const cv::softcascade::FastDtModel::PYRAMID_MINS="minScale";
+const char *const cv::softcascade::FastDtModel::PYRAMID_MAXS="maxScale";
+const char *const cv::softcascade::FastDtModel::PYRAMID_NS="nScales";
+const char *const cv::softcascade::FastDtModel::TRAININGS="Training_Set";
+const char *const cv::softcascade::FastDtModel::TRAININGS_DATAF="datasetFolder";
+const char *const cv::softcascade::FastDtModel::TRAININGS_NIMG="numImages";
+const char *const cv::softcascade::FastDtModel::TRAININGS_IMGS="imageSize";
+const char *const cv::softcascade::FastDtModel::MODELS="Models";
+
+const char *const cv::softcascade::FastDtModel::TraceModel::TRACEMODEL="Trace_Model";
+const char *const cv::softcascade::FastDtModel::TraceModel::TRACEMODEL_LASTSTAGES="LastStages";
+const char *const cv::softcascade::FastDtModel::TraceModel::TRACEMODEL_LASTSTAGES_LASTS="lastStage";
+const char *const cv::softcascade::FastDtModel::TraceModel::TRACEMODEL_LASTSTAGES_SLOPES="slopes";
+
+
+const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL="Geometry_Model";
+const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRIDS="Grids";
+const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_SIZE="size";
+const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS="Blocks";
+const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_ID="id";
+const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_LEVELSH="levelsHist";
+const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_LOCATIONSH="locationsHist";
+const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_LOCATIONSH_AVG="averages";
+const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_LOCATIONSH_COV="covariances";
+const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_RECT="rect";
+const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_ENERGY="energy";
+
+
+// Mnemosyne
 cv::softcascade::Detection::Detection(const cv::Rect& b, const float c, int k)
 : x(static_cast<ushort>(b.x)), y(static_cast<ushort>(b.y)),
   w(static_cast<ushort>(b.width)), h(static_cast<ushort>(b.height)), confidence(c), kind(k) {}
@@ -798,6 +833,7 @@ void cv::softcascade::FastDtModel::GeomModel::compute(Size imgSize,uint levels){
 			}
 		}
 	}
+
 	std::cout<<"---- Geometric Model:  Computation Average and Covariance Matrix ----" <<std::endl;
 	// computation average and covariance position for each block_level
 	for(Grids::iterator g=grids.begin();g!=grids.end();++g){
@@ -921,7 +957,7 @@ cv::softcascade::FastDtModel::FastDtModel()
 {	octaves.clear();
 	levels.clear();
 }
-cv::softcascade::FastDtModel::FastDtModel(ParamDetectorFast param, String data="",uint numImg=-1, Size imgS=Size(0,0))
+cv::softcascade::FastDtModel::FastDtModel(ParamDetectorFast param, std::string data="",uint numImg=-1, Size imgS=Size(0,0))
 : paramDtFast(param), dataset(data), numImages(numImg),imgSize(imgS)
 {	octaves.clear();
 	levels.clear();
@@ -940,7 +976,7 @@ void cv::softcascade::FastDtModel::FastDtModel::write(cv::FileStorage& fso) cons
 
 		// Training Set Section
 		fso<< TRAININGS << "{";
-			fso<< TRAININGS_DATAF<< dataset;
+			fso<< TRAININGS_DATAF<< dataset.data();
 			fso<< TRAININGS_NIMG << (int) numImages;
 			fso<< TRAININGS_IMGS << imgSize;
 		fso<< "}";
@@ -981,7 +1017,7 @@ void cv::softcascade::FastDtModel::computeModel(){
 	geomModel.compute(imgSize, paramDtFast.nScales);
 }
 
-void cv::softcascade::FastDtModel::addStrongWithROI(Rect dw,uint64 rank,uint level){
+void cv::softcascade::FastDtModel::addStrongWithROI(Rect dw,double rank,uint level){
 
 	geomModel.upperLeftPonts[level].push_back(GeomModel::StrongROI(dw,rank));
 
@@ -1414,6 +1450,7 @@ bool cv::softcascade::DetectorFast::load(const FileNode& cascadeModel,const File
 void cv::softcascade::DetectorFast::saveModelIntoDat(String path){
 	fastModel.saveModelIntoDat(path);
 }
+
 void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector<Detection>& objects)
 {
 /*
@@ -1442,7 +1479,7 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 
 	Fields& fld = *fields;
     // create integrals
-    ChannelStorage storage(image, fld.shrinkage, fld.featureTypeStr);
+   ChannelStorage storage(image, fld.shrinkage, fld.featureTypeStr);
 
     typedef std::vector<Level>::const_iterator lIt;
 
@@ -1482,7 +1519,8 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
         		break;
 
 
-        	 //Uniform sampling ( avg=(-1,-1) )
+//Uniform sampling ( avg=(-1,-1) )
+
 /*        	if(blocks[b].locationsHist[it-fld.levels.begin()].avg.at<double>(0,0)==-1. ||
         	   blocks[b].locationsHist[it-fld.levels.begin()].avg.at<double>(0,1)==-1.){
 */
@@ -1512,7 +1550,7 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
                 {
                     for (int dx = startX; dx < endX; dx+=stepX)
                     {
-                        storage.offset = (int)(dy * storage.step + dx);
+                    	storage.offset = (int)(dy * storage.step + dx);
                         fld.detectAt(dx, dy, level, storage, objects);
                     }
                 }
@@ -1622,11 +1660,6 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
         //######################################################################
   */
 
-
-
-
-
-
     }
 /*
 //-------------------------------------------------------------------
@@ -1642,6 +1675,12 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 
 
 	if (rejCriteria != NO_REJECT) suppress(rejCriteria, objects);
+
+}
+
+
+void cv::softcascade::DetectorFast::detectFastWithROI(cv::InputArray _image,cv::InputArray _rois, std::vector<Detection>& objects){
+
 }
 
 inline uint cv::softcascade::DetectorFast::getNumLevels(){
@@ -1880,4 +1919,8 @@ void cv::softcascade::DetectorTrace::detectTrace(InputArray _image, InputArray _
 
     if (traceType2Return != NEGATIVE_TR) DollarNMSTrace(positiveTrace,traceType2Return==LOCALMAXIMUM_TR);
 }
+
+
+
+
 

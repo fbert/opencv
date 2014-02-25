@@ -79,10 +79,32 @@ public:
         cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
 
         cv::Mat df_dx, df_dy, mag, angle;
-        cv::Sobel(gray, df_dx, CV_32F, 1, 0);
-        cv::Sobel(gray, df_dy, CV_32F, 0, 1);
+        cv::Mat luv, shrunk;
 
-        cv::cartToPolar(df_dx, df_dy, mag, angle, true);
+//        clock_t e1,e2;
+//        e1=clock();
+//        omp_set_num_threads(3);
+//		#pragma omp parallel
+//        {
+//			#pragma omp sections nowait
+//        	{
+//				#pragma omp section
+//				{
+					cv::Sobel(gray, df_dx, CV_32F, 1, 0);
+					cv::Sobel(gray, df_dy, CV_32F, 0, 1);
+//				}
+//				#pragma omp section
+//				{
+ 					cv::cvtColor(frame, luv, cv::COLOR_BGR2Luv);
+//				}
+//        	}
+//        }
+//		e2=clock();
+//		std::cout<<" Clock: "<<e2-e1<<" , ";
+
+//		e1=clock();
+
+		cv::cartToPolar(df_dx, df_dy, mag, angle, true);
         mag *= (1.f / (8 * sqrt(2.f)));
 
         cv::Mat nmag = channels(cv::Rect(0, h * (N_CHANNELS - 4), w, h));
@@ -101,8 +123,8 @@ public:
             }
         }
 
-        cv::Mat luv, shrunk;
-        cv::cvtColor(frame, luv, cv::COLOR_BGR2Luv);
+//        cv::Mat luv, shrunk;
+//        cv::cvtColor(frame, luv, cv::COLOR_BGR2Luv);
 
         std::vector<cv::Mat> splited;
         for (int i = 0; i < 3; ++i)
@@ -110,6 +132,8 @@ public:
         split(luv, splited);
         cv::resize(channels, shrunk, cv::Size(integrals.cols - 1, integrals.rows - 1), -1 , -1, cv::INTER_AREA);
         cv::integral(shrunk, integrals, cv::noArray(), CV_32S);
+//        e2=clock();
+//		std::cout<<e2-e1<<std::endl;
     }
 };
 

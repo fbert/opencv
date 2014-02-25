@@ -9,7 +9,6 @@
 #define SOFTCASCADE_FAST_HPP_
 
 #include "softcascade.hpp"
-
 #include <fstream>
 #include <map>
 #include <list>
@@ -19,6 +18,8 @@
 struct Level;
 struct ChannelStorage;
 
+/*
+
 #define DEBUG_MSG
 
 #ifdef DEBUG_MSG
@@ -26,9 +27,9 @@ struct ChannelStorage;
 #else
 #define DEBUG_MSG(str) do { } while ( false )
 #endif
+*/
 
 namespace cv { namespace softcascade {
-
 
 // ============================================================================================================== //
 //					     Declaration of DetectorFast (with trace evaluation reduction)
@@ -74,7 +75,7 @@ struct CV_EXPORTS FastDtModel
 
 	struct Block;
 
-	FastDtModel(ParamDetectorFast paramDtFast, String datase,uint numImages,Size imgSize);
+	FastDtModel(ParamDetectorFast paramDtFast, std::string datase,uint numImages,Size imgSize);
 	FastDtModel();
 	//FastDtModel(uint numLevels);
 
@@ -90,7 +91,7 @@ struct CV_EXPORTS FastDtModel
     bool getLevelsForStage(uint  lastStage, std::vector<uint>& levels);
 
     // Interface for Geometry-Model
-    void addStrongWithROI(Rect dw,uint64 rank,uint level);
+    void addStrongWithROI(Rect dw,double rank,uint level);
     void setGridsSize(std::vector<uint> grids);
     std::vector<Block>& getBlocks4Grid(uint gridSize);
     void resolveWrongStd();
@@ -109,7 +110,7 @@ struct CV_EXPORTS FastDtModel
     ParamDetectorFast paramDtFast;
 
     // Additional information for training of trace/geometry models
-    String	dataset;
+    std::string	dataset;
     uint	numImages;
     Size	imgSize;
 
@@ -183,10 +184,10 @@ private:
     	static const char *const GEOMMODEL_GRID_BLOCKS_ENERGY;
 
     	struct StrongROI{
-    		StrongROI(Rect d, uint64 r):dw(d),rank(r){};
+    		StrongROI(Rect d, double r):dw(d),rank(r){};
 
     		Rect dw;
-    		uint64 rank;
+    		double rank;
 
     	};
 
@@ -211,34 +212,7 @@ private:
 
     }geomModel;
 };
-const char *const FastDtModel::ROOT="Fast_Detector";
-const char *const FastDtModel::PYRAMID="Pyramid_Setting";
-const char *const FastDtModel::PYRAMID_MINS="minScale";
-const char *const FastDtModel::PYRAMID_MAXS="maxScale";
-const char *const FastDtModel::PYRAMID_NS="nScales";
-const char *const FastDtModel::TRAININGS="Training_Set";
-const char *const FastDtModel::TRAININGS_DATAF="datasetFolder";
-const char *const FastDtModel::TRAININGS_NIMG="numImages";
-const char *const FastDtModel::TRAININGS_IMGS="imageSize";
-const char *const FastDtModel::MODELS="Models";
 
-const char *const FastDtModel::TraceModel::TRACEMODEL="Trace_Model";
-const char *const FastDtModel::TraceModel::TRACEMODEL_LASTSTAGES="LastStages";
-const char *const FastDtModel::TraceModel::TRACEMODEL_LASTSTAGES_LASTS="lastStage";
-const char *const FastDtModel::TraceModel::TRACEMODEL_LASTSTAGES_SLOPES="slopes";
-
-
-const char *const FastDtModel::GeomModel::GEOMMODEL="Geometry_Model";
-const char *const FastDtModel::GeomModel::GEOMMODEL_GRIDS="Grids";
-const char *const FastDtModel::GeomModel::GEOMMODEL_GRID_SIZE="size";
-const char *const FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS="Blocks";
-const char *const FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_ID="id";
-const char *const FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_LEVELSH="levelsHist";
-const char *const FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_LOCATIONSH="locationsHist";
-const char *const FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_LOCATIONSH_AVG="averages";
-const char *const FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_LOCATIONSH_COV="covariances";
-const char *const FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_RECT="rect";
-const char *const FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_ENERGY="energy";
 
 
 // required for cv::FileStorage serialization
@@ -282,6 +256,7 @@ public:
     // Param rois is a vector of regions of interest. Only the objects that fall into one of the regions will be returned.
     // Param objects is an output array of Detections
     virtual void detectFast(cv::InputArray _image,std::vector<Detection>& objects);
+    virtual void detectFastWithROI(cv::InputArray _image,cv::InputArray _rois, std::vector<Detection>& objects);
 
     // Save both models (trace and geometry) respectively in path/Trace_Model.dat and path/Geometry_Model.dat
     void saveModelIntoDat(String path);
@@ -381,9 +356,9 @@ private:
 
 };
 
-
-
 }}
+
+
 
 
 #endif /* SOFTCASCADE_PLUS_HPP_ */

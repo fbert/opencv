@@ -794,7 +794,8 @@ void cv::softcascade::FastDtModel::GeomModel::compute(Size imgSize,uint levels){
 	// initialize block and levels and energy histograms
 	for(uint g=0;g<gridsSize.size();g++){
 		grids[gridsSize[g]]=std::vector<Block>(gridsSize[g]*gridsSize[g],Block(levels));
-		strongLoc[gridsSize[g]]= std::vector<std::vector<std::vector<double> > >  (gridsSize[g]*gridsSize[g], std::vector<std::vector<double> >(levels,std::vector<double>()));
+		strongLoc[gridsSize[g]]= std::vector<std::vector<std::vector<double> > >  (gridsSize[g]*gridsSize[g],
+				std::vector<std::vector<double> >(levels,std::vector<double>()));
 
 		// compute rect for each block
 		uint dw=  imgSize.width/gridsSize[g];
@@ -810,9 +811,10 @@ void cv::softcascade::FastDtModel::GeomModel::compute(Size imgSize,uint levels){
 				grids[gridsSize[g]][count++].rect=Rect(x,y,dw,dh);
 			}
 		}
-
 	}
 
+
+	std::cout<<"\n---- Geometric Model:  Assign strong locations for each block-levels ----" <<std::endl;
 	// extraction statistics of strongs for all grids size: levels histogram (not-normalized) and locations
 	for(StrongsROI::iterator l_s=upperLeftPonts.begin();l_s!=upperLeftPonts.end();++l_s){
 		uint level=l_s->first;
@@ -824,9 +826,29 @@ void cv::softcascade::FastDtModel::GeomModel::compute(Size imgSize,uint levels){
 											  s->dw.y+cvRound((double)(s->dw.height)/2)))){
 						b->levelsHist[level]+=s->rank;
 
-						// insert location in the order: x y
-						strongLoc[g->first][b-g->second.begin()][level].push_back((double)(s->dw.x));
-						strongLoc[g->first][b-g->second.begin()][level].push_back((double)(s->dw.y));
+						bool duplicate=false;
+						for(int i=0;i<(int) (strongLoc.at(g->first).at(b-g->second.begin()).at(level).size())-1;i=i+2){
+
+							if( strongLoc[g->first][b-g->second.begin()][level][i]==(double)(s->dw.x) &&
+								strongLoc[g->first][b-g->second.begin()][level][i+1]==(double)(s->dw.y)
+
+							)
+							{
+								duplicate=true;
+								break;
+							}
+
+						}
+						if(!duplicate){
+							std::cout<<"\t Add strong ("<<s->dw.x<<","<<s->dw.y<<","<<s->dw.width<<","<<s->dw.height<<") in: "
+									<<" G- "<< g->first
+									<<" B- "<< b-g->second.begin()
+									<<" L- "<<level
+									<<std::endl;
+							// insert location in the order: x y
+							strongLoc[g->first][b-g->second.begin()][level].push_back((double)(s->dw.x));
+							strongLoc[g->first][b-g->second.begin()][level].push_back((double)(s->dw.y));
+						}
 						break;
 					}
 				}
@@ -1461,9 +1483,11 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 		fields->octaves[i].index=(int)(fields->octaves[i].weaks*fields->octaves[i].index)/lastStage;
 		fields->octaves[i].weaks= lastStage;
 	}
+
+
+	double slope;
 */
 	uint currentSize;
-	double slope;
 
 	std::vector<FastDtModel::Block> blocks=fastModel.getBlocks4Grid(fastModel.paramDtFast.gridSize);
 
@@ -1510,7 +1534,6 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 //  std::cout<<std::endl<<"\t level "<<it - fld.levels.begin()<<std::endl;
 
         for(uint b=0;b<blocks.size();b++){
-
 
         	int remainingSamp=cvCeil(fastModel.paramDtFast.gamma*pyramidSize*blocks[b].energy*blocks[b].levelsHist[it-fld.levels.begin()]);
 

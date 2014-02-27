@@ -75,7 +75,7 @@ struct CV_EXPORTS FastDtModel
 
 	struct Block;
 
-	FastDtModel(ParamDetectorFast paramDtFast, std::string datase,uint numImages,Size imgSize);
+	FastDtModel(ParamDetectorFast paramDtFast, std::string dataset,uint numImages,Size imgSize);
 	FastDtModel();
 	//FastDtModel(uint numLevels);
 
@@ -257,6 +257,13 @@ public:
     // Param objects is an output array of Detections
     virtual void detectFast(cv::InputArray _image,std::vector<Detection>& objects);
     virtual void detectFastWithROI(cv::InputArray _image,cv::InputArray _rois, std::vector<Detection>& objects);
+
+
+    void setExecParam(uint lastStage,  uint gridSize, double gamma){
+    	fastModel.paramDtFast.lastStage=lastStage;
+    	fastModel.paramDtFast.gridSize=gridSize;
+    	fastModel.paramDtFast.gamma=gamma;
+    };
 
     // Save both models (trace and geometry) respectively in path/Trace_Model.dat and path/Geometry_Model.dat
     void saveModelIntoDat(String path);

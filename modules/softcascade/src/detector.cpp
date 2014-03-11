@@ -780,7 +780,35 @@ void cv::softcascade::FastDtModel::GeomModel::read(const FileNode& node){
 		}
 	}
 }
+void cv::softcascade::FastDtModel::GeomModel::setUniform(Size imgSize,uint levels){
 
+	// initialize blocks, levels and energy histograms for each grid size
+
+	for(uint g=0;g<gridsSize.size();g++){
+		grids[gridsSize[g]]=std::vector<Block>(gridsSize[g]*gridsSize[g],Block(levels, 1./(double)(levels),1./(double)(gridsSize[g]*gridsSize[g])));
+
+		// compute rect for each block
+		uint dw=  imgSize.width/gridsSize[g];
+		uint dh= imgSize.height/gridsSize[g];
+
+		std::cout<<"Grid Size: " <<gridsSize[g]<<"x"<<gridsSize[g] <<std::endl;
+
+		uint count=0;
+		for(uint b_y=0,y=0;b_y<gridsSize[g];b_y++,y+=dh+1){
+			for(uint b_x=0,x=0;b_x<gridsSize[g];b_x++, x+=dw+1){
+				std::cout<<"\t Block " <<count<<":";
+				std::cout<<" Size - rect("<<x<<","<<y<<","<<dw<<","<<dh<<")"<<std::endl;
+				grids[gridsSize[g]][count++].rect=Rect(x,y,dw,dh);
+
+
+				std::cout<<"\t\t Levels Histogram: ";
+				for(uint i=0;i<grids[gridsSize[g]][count-1].levelsHist.size();i++)
+					std::cout<<grids[gridsSize[g]][count-1].levelsHist[i]<<" ";
+				std::cout<<std::endl;
+			}
+		}
+	}
+}
 
 void cv::softcascade::FastDtModel::GeomModel::compute(Size imgSize,uint levels){
 
@@ -809,6 +837,7 @@ void cv::softcascade::FastDtModel::GeomModel::compute(Size imgSize,uint levels){
 			for(uint b_x=0,x=0;b_x<gridsSize[g];b_x++, x+=dw+1){
 				std::cout<<"\t Size Block "<<count<<": rect("<<x<<","<<y<<","<<dw<<","<<dh<<")"<<std::endl;
 				grids[gridsSize[g]][count++].rect=Rect(x,y,dw,dh);
+
 			}
 		}
 	}
@@ -1112,6 +1141,66 @@ void cv::softcascade::FastDtModel::smoothLocations(){
 		}
 	}
 }
+
+/*cv::softcascade::FastDtModel cv::softcascade::FastDtModel::operator+(const FastDtModel& model){
+
+
+	FastDtModel modelSum(paramDtFast,dataset, numImages+model.numImages,imgSize);
+
+
+	//------ Trace Approximation:  consider only modelL
+	modelSum.traceModel=traceModel;
+
+	//------ Geometry Model: merge both models
+
+	//------ Copy the first gem. model
+	modelSum.geomModel.grids=geomModel.grids;
+
+
+	GeomModel::Grids::const_iterator itG=model.geomModel.grids.begin();
+
+		for( ;itG!=model.geomModel.grids.end();++itG){
+
+
+			double levHistAcc=std::accumulate(b->levelsHist.begin(),b->levelsHist.end(),0.);
+
+						// energy
+						b->energy=levHistAcc/energyTot[g->first];
+
+						// levels histogram normalization
+						if(levHistAcc>0){
+							for(uint l=0;l<levels;l++)
+								b->levelsHist[l]/=levHistAcc;
+						}
+
+
+			uint id=0;
+			for(std::vector<Block>::const_iterator itB=itG->second.begin();itB!=itG->second.end();++itB){
+				outFile<< (int)itG->first<<","<<id++;
+
+				for(int i=0;i<itB->levelsHist.size();i++)
+				outFile<< ","<< itB->levelsHist[i];
+
+
+				for(std::vector<AverageCov>::const_iterator itA=itB->locationsHist.begin();itA!=itB->locationsHist.end();++itA)
+					outFile<<","<< itA->avg.at<double>(0,0)<<","<<itA->avg.at<double>(1,0);
+
+				for(std::vector<AverageCov>::const_iterator itC=itB->locationsHist.begin();itC!=itB->locationsHist.end();++itC)
+					outFile<<","<< itC->cov.at<double>(0,0)<<","<<itC->cov.at<double>(0,1)<<","
+					<<itC->cov.at<double>(1,0)<<","<<itC->cov.at<double>(1,1);
+
+
+				outFile<<","<< itB->rect.x<<","<<itB->rect.y<<","<<itB->rect.width<<","<<itB->rect.height;
+				outFile<<","<< itB->energy<<"\n";
+
+			}
+		}
+
+
+
+	return modelSum;
+}*/
+
 void cv::softcascade::FastDtModel::saveModelIntoDat(String path){
 
 	// Trace Approximation
@@ -1468,7 +1557,6 @@ bool cv::softcascade::DetectorFast::load(const FileNode& cascadeModel,const File
 {
 	return Detector::load(cascadeModel)&&loadModel(fastModel);
 }
-
 void cv::softcascade::DetectorFast::saveModelIntoDat(String path){
 	fastModel.saveModelIntoDat(path);
 }

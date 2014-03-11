@@ -14,6 +14,7 @@
 #include <list>
 #include <numeric>
 #include <set>
+#include <iostream>
 
 struct Level;
 struct ChannelStorage;
@@ -98,6 +99,66 @@ struct CV_EXPORTS FastDtModel
     void smoothLocations();
     void saveModelIntoDat(String path);
 
+    // for now, merging geometric models only
+    static FastDtModel mergeModels(const std::vector<FastDtModel>& models){
+    	FastDtModel outModel;
+
+    		if (models.size()==0)
+    			return outModel;
+    		if (models.size()==1)
+    			return models[0];
+
+    		outModel=models[0];
+
+    		// Trace Approximation
+    		// empty
+
+    		// Geometry Model
+    		GeomModel::Grids::iterator itG=outModel.geomModel.grids.begin();
+    		for( ;itG!=outModel.geomModel.grids.end();++itG){
+
+    			// For each block
+    			double energyAcc=0.;
+    			for(std::vector<Block>::iterator itB=itG->second.begin();itB!=itG->second.end();++itB){
+    				double energyAvg=itB->energy;
+    				for(uint l=0;l<itB->levelsHist.size();l++){
+    					itB->levelsHist[l]*=itB->energy;
+
+    					// merging levels histogram
+    					for(uint m=1;m<models.size();m++){
+    						const Block* block=&(models.at(m).geomModel.grids.at(itG->first).at(itB-itG->second.begin()));
+    						itB->levelsHist[l]+=block->levelsHist[l]*block->energy;
+    						energyAvg+=block->energy;
+    					}
+
+
+    				}
+    				// levels histogram normalization
+    				double levHistAcc=std::accumulate(itB->levelsHist.begin(),itB->levelsHist.end(),0.);
+    				std::transform(itB->levelsHist.begin(), itB->levelsHist.end(), itB->levelsHist.begin(),
+    				               std::bind1st(std::multiplies<double>(),1./levHistAcc));
+
+    				// assign new block energy
+    				itB->energy=energyAvg;
+    				energyAcc+=energyAcc;
+    			}
+
+    			// blocks energy normalization
+    			for(std::vector<Block>::iterator itB=itG->second.begin();itB!=itG->second.end();++itB)
+    				itB->energy/=energyAcc;
+    		}
+    		return outModel;
+    }
+    static FastDtModel UNIFORM_MODEL(const ParamDetectorFast& prm,const Size& imgSize, const std::vector<uint>& grids){
+
+    	FastDtModel outModel(prm, "",-1,imgSize);
+    	outModel.setGridsSize(grids);
+
+    	// set geom. uniformly
+    	outModel.geomModel.setUniform(imgSize,prm.nScales);
+
+    	return outModel;
+    }
 
 
     // ------------ Parameters ---------------------
@@ -127,6 +188,12 @@ struct CV_EXPORTS FastDtModel
 		:levelsHist(std::vector<double>(levels,0.)),
 		locationsHist(std::vector<AverageCov>(levels,AverageCov())),
 		energy(0.){};
+		Block(uint levels, double histV, double energyV)
+				:levelsHist(std::vector<double>(levels,histV)),
+				locationsHist(std::vector<AverageCov>(levels,AverageCov())),
+				energy(energyV){};
+
+
 
 		Block(std::vector<double> lvH,std::vector<AverageCov> locH, Rect rt, double e)
 		:levelsHist(lvH), locationsHist(locH), rect(rt), energy(e){};
@@ -192,8 +259,6 @@ private:
     	};
 
     	typedef std::map<uint,std::vector<StrongROI> > StrongsROI;
-
-
     	typedef std::map<uint,std::vector<Block> > Grids;
 
     	GeomModel(){}
@@ -201,6 +266,8 @@ private:
     	void compute(Size imageSize,uint levels);
     	void write(FileStorage& fso) const;
     	void read(const FileNode& node);
+
+    	void setUniform(Size imgSize,uint levels);
 
 
     	// variables for storage input data
@@ -227,7 +294,7 @@ inline void read(const cv::FileNode& node, FastDtModel& x, const FastDtModel& de
 
 }
 // For print FastModel to the console
-std::ostream& operator<<(std::ostream& out, const FastDtModel& m);
+//std::ostream& operator<<(std::ostream& out, const FastDtModel& m);
 
 
 
@@ -265,7 +332,32 @@ public:
     	fastModel.paramDtFast.gamma=gamma;
     };
 
-    // Save both models (trace and geometry) respectively in path/Trace_Model.dat and path/Geometry_Model.dat
+    static void mergeModels(std::string outPath, std::vector<std::string>& modelsPath){
+    	cv::FileStorage outFS(outPath.data(), cv::FileStorage::WRITE);
+        if(!outFS.isOpened()){
+        	std::cout<<"<<< Error >>> Opening file "<<outPath<<" FAILED !!!";
+    		exit(-1);
+        }
+        std::vector<FastDtModel> models;
+
+        for(uint i=0;modelsPath.size();i++){
+        	cv::FileStorage fs(modelsPath[i].data(), cv::FileStorage::READ);
+            if(!fs.isOpened()){
+        		std::cout<<"<<< Error >>> Opening file "<<modelsPath[i]<<" FAILED !!!";
+        		exit(-1);
+            }
+            FastDtModel model;
+           	model.read(fs.getFirstTopLevelNode());
+       		models.push_back(model);
+       		fs.release();
+        }
+    	FastDtModel outModel=FastDtModel::mergeModels(models);
+      	outFS << cv::softcascade::FastDtModel::ROOT;
+       	outModel.write(outFS);
+      	outFS.release();
+    }
+
+    // Save both models (trace and geometry) in path/Trace_Model.dat and path/Geometry_Model.dat respectively
     void saveModelIntoDat(String path);
 
     CV_WRAP uint getNumLevels();
@@ -353,6 +445,7 @@ public:
     // Param negativeTrace 	is an output array of Positive Traces
     // Param traceType 		is an output array of Trace
     virtual void detectTrace(InputArray image, InputArray rois, std::vector<Trace>& positiveTrace,std::vector<Trace>& negativeTrace, int traceType=cv::softcascade::DetectorTrace::LOCALMAXIMUM_TR);
+    inline Fields* returnFields(){return fields;};
 
 private:
     void detectNoRoiTrace(const Mat& image, std::vector<Trace>& positiveTrace,std::vector<Trace>& negativeTrace);

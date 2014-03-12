@@ -288,6 +288,7 @@ struct cv::softcascade::Detector::Fields
 
         int stBegin = octave.index * octave.weaks, stEnd = stBegin + octave.weaks;
 
+
         for(int st = stBegin; st < stEnd; ++st)
         {
             const Weak& weak = weaks[st];
@@ -1561,6 +1562,127 @@ void cv::softcascade::DetectorFast::saveModelIntoDat(String path){
 	fastModel.saveModelIntoDat(path);
 }
 
+void cv::softcascade::DetectorFast::detectFastWithMask(cv::InputArray _image, cv::InputArray _m, double th,std::vector<Detection>& objects){
+
+
+	uint currentSize;
+
+
+	std::vector<FastDtModel::Block> blocks=fastModel.getBlocks4Grid(fastModel.paramDtFast.gridSize);
+
+	// only color images are suppered
+	cv::Mat image = _image.getMat();
+	CV_Assert(image.type() == CV_8UC3);
+
+	cv::Mat mask= _m.getMat();
+	mask.convertTo(mask, CV_32SC1);
+
+	fields->calcLevels(image.size(),(float) minScale, (float)maxScale, scales);
+	objects.clear();
+
+//--- Execution detection phase with NO_REJECT (detectNoROI function) -
+
+	Fields& fld = *fields;
+	// create integrals
+    ChannelStorage storage(image, fld.shrinkage, fld.featureTypeStr);
+
+    int shr = fld.shrinkage;
+
+	typedef std::vector<Level>::const_iterator lIt;
+
+	// compute the pyramid size (total number of dw)
+	double pyramidSize=0.;
+	for (lIt it = fld.levels.begin(); it != fld.levels.end(); ++it)
+	{
+		const Level& level = *it;
+
+		// we train only 3 scales.
+		if (level.origScale > 2.5) break;
+
+		pyramidSize+=(double)level.workRect.height*level.workRect.width;
+
+	}
+//    std::cout<< "Size of Pyramid: "<<pyramidSize<< "dw"<< std::endl;
+
+	for (lIt it = fld.levels.begin(); it != fld.levels.end(); ++it)
+	{
+		const Level& level = *it;
+
+		// we train only 3 scales.
+		if (level.origScale > 2.5) break;
+
+		currentSize=objects.size();
+
+		//############ Sampling by geometric model #######################
+//  std::cout<<std::endl<<"\t level "<<it - fld.levels.begin()<<std::endl;
+
+		for(uint b=0;b<blocks.size();b++){
+
+			int remainingSamp=cvCeil(fastModel.paramDtFast.gamma*pyramidSize*blocks[b].energy*blocks[b].levelsHist[it-fld.levels.begin()]);
+
+//        	std::cout<< " n° dw to extract: "<< remainingSamp<<std::endl;
+			if(remainingSamp==0)
+				break;
+
+
+//Uniform sampling ( avg=(-1,-1) )
+
+/*        	if(blocks[b].locationsHist[it-fld.levels.begin()].avg.at<double>(0,0)==-1. ||
+			   blocks[b].locationsHist[it-fld.levels.begin()].avg.at<double>(0,1)==-1.){
+*/
+			 //std::cout<<"\t \t Block "<<b<< "\t Uniform Sampling ("<<remainingSamp<<")"<<std::endl;
+
+				int startX = cvRound((double)(blocks[b].rect.x)/shr);
+				int startY = cvRound((double)(blocks[b].rect.y)/shr);
+				int endX   = std::min(cvRound((double)(blocks[b].rect.x+blocks[b].rect.width) /shr),
+									  level.workRect.width);
+				int endY   = std::min(cvRound((double)(blocks[b].rect.y+blocks[b].rect.height) /shr),
+									  level.workRect.height);
+
+				int stepX=cvRound((double)(endX-startX+1)/std::sqrt(remainingSamp));
+				if(stepX<1)
+					stepX=1;
+
+				int stepY=cvRound((double)(endY-startY+1)/std::sqrt(remainingSamp));
+				if(stepY<1)
+					stepY=1;
+
+
+//        		std::cout<<"Block "<<b<< "("<<remainingSamp<<")"<<": ("<<startX<<" , "<<startY<<" , "<<endX<<","<<endY<<") - ("
+//        				 <<stepX<<","<<stepY<<")"<<std::endl;
+
+
+
+				double motion_sum;
+				double motion_rank;
+				for (int dy = startY; dy < endY; dy+=stepY)
+				{
+					for (int dx = startX; dx < endX; dx+=stepX)
+					{
+						motion_sum=0.;
+
+						for(int y=cvRound(dy * shr); y<cvRound(dy * shr)+level.objSize.height;y++){
+							for(int x=cvRound(dx * shr); x<=cvRound(dx * shr)+level.objSize.width;x++){
+								motion_sum+= mask.ptr<int>(y)[x];
+							}
+						}
+
+						motion_rank= motion_sum/(level.objSize.width*level.objSize.height);
+
+						if(motion_rank<th)
+							continue;
+
+						storage.offset = (int)(dy * storage.step + dx);
+						fld.detectAt(dx, dy, level, storage, objects);
+
+					}
+				}
+		}
+	}
+	if (rejCriteria != NO_REJECT) suppress(rejCriteria, objects);
+}
+
+
 void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector<Detection>& objects)
 {
 /*
@@ -1790,10 +1912,6 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 }
 
 
-void cv::softcascade::DetectorFast::detectFastWithROI(cv::InputArray _image,cv::InputArray _rois, std::vector<Detection>& objects){
-
-}
-
 inline uint cv::softcascade::DetectorFast::getNumLevels(){
 	return fields->levels.size();
 }
@@ -1973,6 +2091,31 @@ void cv::softcascade::DetectorTrace::detectNoRoiTrace(const cv::Mat& image, std:
     if (traceType2Return != NEGATIVE_TR) DollarNMSTrace(positiveTrace,traceType2Return==LOCALMAXIMUM_TR);
 }
 
+uint cv::softcascade::DetectorTrace::nLevels(){return fields->levels.size();}
+
+void cv::softcascade::DetectorTrace::getRejectionThreshols(std::vector< std::vector<float> >& ths){
+	ths.clear();
+
+	std::vector<SOctave>::iterator itO;
+
+	for (itO=fields->octaves.begin();itO!=fields->octaves.end();++itO){
+
+		int stBegin = itO->index * itO->weaks, stEnd = stBegin + itO->weaks;
+
+		for(int st = stBegin; st < stEnd; ++st)
+		{
+			const Weak& weak = fields->weaks[st];
+			ths[itO-fields->octaves.begin()].push_back(weak.threshold);
+		}
+	}
+}
+
+void cv::softcascade::DetectorTrace::getInfo4LevelId(int id, cv::Size& workRect, cv::Size& dw, int& octaveId){
+	workRect=fields->levels[id].workRect;
+	dw=fields->levels[id].objSize;
+	octaveId=fields->levels[id].octave->index;
+
+}
 void cv::softcascade::DetectorTrace::detectTrace(InputArray _image, InputArray _rois, std::vector<Trace>& positiveTrace,std::vector<Trace>& negativeTrace, int traceType)
 {
 

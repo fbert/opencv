@@ -323,7 +323,7 @@ public:
     // Param rois is a vector of regions of interest. Only the objects that fall into one of the regions will be returned.
     // Param objects is an output array of Detections
     virtual void detectFast(cv::InputArray _image,std::vector<Detection>& objects);
-    virtual void detectFastWithROI(cv::InputArray _image,cv::InputArray _rois, std::vector<Detection>& objects);
+    virtual void detectFastWithMask(cv::InputArray _image, cv::InputArray _mask, double th,std::vector<Detection>& objects);
 
 
     void setExecParam(uint lastStage,  uint gridSize, double gamma){
@@ -445,7 +445,11 @@ public:
     // Param negativeTrace 	is an output array of Positive Traces
     // Param traceType 		is an output array of Trace
     virtual void detectTrace(InputArray image, InputArray rois, std::vector<Trace>& positiveTrace,std::vector<Trace>& negativeTrace, int traceType=cv::softcascade::DetectorTrace::LOCALMAXIMUM_TR);
-    inline Fields* returnFields(){return fields;};
+
+    uint nLevels();
+    void getInfo4LevelId(int id, cv::Size& workRect, cv::Size& dw,int& octaveId);
+    void getRejectionThreshols(std::vector< std::vector<float> >& ths);
+
 
 private:
     void detectNoRoiTrace(const Mat& image, std::vector<Trace>& positiveTrace,std::vector<Trace>& negativeTrace);

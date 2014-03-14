@@ -1205,12 +1205,12 @@ void cv::softcascade::FastDtModel::smoothLocations(){
 	return modelSum;
 }*/
 
-void cv::softcascade::FastDtModel::saveModelIntoDat(String path){
+void cv::softcascade::FastDtModel::saveModelIntoDat(String path, String prefix){
 
 	// Trace Approximation
 	std::cout<<"Saving Trace Approximation...";
 	std::ofstream outFile;
-	outFile.open((path+"/"+TraceModel::TRACEMODEL+".dat").c_str(),std::ofstream::out);
+	outFile.open((path+"/"+prefix+"-"+TraceModel::TRACEMODEL+".dat").c_str(),std::ofstream::out);
 
 	TraceModel::SlopesMap::const_iterator itS= traceModel.slopes.begin();
 
@@ -1228,7 +1228,7 @@ void cv::softcascade::FastDtModel::saveModelIntoDat(String path){
 
 	// Geometry Model
 	std::cout<<"Saving Geometric Histograms...";
-	outFile.open((path+"/"+GeomModel::GEOMMODEL+".dat").c_str(),std::ofstream::out);
+	outFile.open((path+"/"+prefix+"-"+GeomModel::GEOMMODEL+".dat").c_str(),std::ofstream::out);
 
 	GeomModel::Grids::const_iterator itG=geomModel.grids.begin();
 

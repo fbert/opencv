@@ -97,7 +97,7 @@ struct CV_EXPORTS FastDtModel
     std::vector<Block>& getBlocks4Grid(uint gridSize);
     void resolveWrongStd();
     void smoothLocations();
-    void saveModelIntoDat(String path);
+    void saveModelIntoDat(String path,String prefix="");
 
     // for now, merging geometric models only
     static FastDtModel mergeModels(const std::vector<FastDtModel>& models){

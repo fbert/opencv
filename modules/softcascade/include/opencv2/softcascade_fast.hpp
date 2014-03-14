@@ -86,7 +86,7 @@ struct CV_EXPORTS FastDtModel
 
     // Interface for Trace-Model
     void addTraceForTraceModel(uint stage,uint level,const std::vector<Point2d>& trace);
-    void computeModel();
+    void computeModel(bool useTraceApp,bool useGeomHist);
     bool getSlopeAt(uint stage,uint level,double& slope);
     void getLastSt(std::vector<uint>& stages);
     bool getLevelsForStage(uint  lastStage, std::vector<uint>& levels);
@@ -176,7 +176,10 @@ struct CV_EXPORTS FastDtModel
     Size	imgSize;
 
 	struct AverageCov{
-		AverageCov(){};
+		AverageCov(){
+			avg=Mat(1,2,CV_64FC1,-1.);
+			cov=Mat(2,2,CV_64FC1,0.);
+		};
 		AverageCov(Mat a, Mat c): avg(a),cov(c){};
 
 		Mat avg;
@@ -315,8 +318,8 @@ public:
     // Load soft cascade from FileNode and trace-model.
     // Param fileNode 		is a root node for cascade.
     // Param fileNodeModel 	is a root node for trace-model.
-    CV_WRAP virtual bool load(const FileNode& cascadeModel,const FileNode& fastModel);
-
+     virtual bool load(const FileNode& cascadeModel,const FileNode& fastModel);
+     virtual bool load(const FileNode& cascadeModel);
 
     // Return the vector of Detection objects (with fast evaluation).
     // Param image is a frame on which detector will be applied.

@@ -79,6 +79,8 @@ const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS
 const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_ENERGY="energy";
 
 
+
+
 // Mnemosyne
 cv::softcascade::Detection::Detection(const cv::Rect& b, const float c, int k)
 : x(static_cast<ushort>(b.x)), y(static_cast<ushort>(b.y)),
@@ -650,7 +652,6 @@ void cv::softcascade::FastDtModel::TraceModel::compute(uint levels){
 
 	double slopeSum;
 
-
 	for(LinesMap::iterator itS=linesParam.begin();itS!=linesParam.end();++itS){
 		slopes[itS->first]=std::vector<double>(levels,0.);
 		for(LevelsMap::iterator itL=itS->second.begin();itL!=itS->second.end();++itL){
@@ -1064,9 +1065,11 @@ void cv::softcascade::FastDtModel::addTraceForTraceModel(uint stage,uint level,c
 	traceModel.linesParam[stage][level].push_back(Vec4f(line));
 }
 
-void cv::softcascade::FastDtModel::computeModel(){
-	traceModel.compute(paramDtFast.nScales);
-	geomModel.compute(imgSize, paramDtFast.nScales);
+void cv::softcascade::FastDtModel::computeModel(bool useTraceApp,bool useGeomHist){
+	if(useTraceApp)
+		traceModel.compute(paramDtFast.nScales);
+	if(useGeomHist)
+		geomModel.compute(imgSize, paramDtFast.nScales);
 }
 
 void cv::softcascade::FastDtModel::addStrongWithROI(Rect dw,double rank,uint level){
@@ -1205,6 +1208,7 @@ void cv::softcascade::FastDtModel::smoothLocations(){
 void cv::softcascade::FastDtModel::saveModelIntoDat(String path){
 
 	// Trace Approximation
+	std::cout<<"Saving Trace Approximation...";
 	std::ofstream outFile;
 	outFile.open((path+"/"+TraceModel::TRACEMODEL+".dat").c_str(),std::ofstream::out);
 
@@ -1220,22 +1224,22 @@ void cv::softcascade::FastDtModel::saveModelIntoDat(String path){
 		outFile << "\n";
 	}
 	outFile.close();
+	std::cout<<"\tCOMPLETED"<<std::endl;
 
 	// Geometry Model
+	std::cout<<"Saving Geometric Histograms...";
 	outFile.open((path+"/"+GeomModel::GEOMMODEL+".dat").c_str(),std::ofstream::out);
 
 	GeomModel::Grids::const_iterator itG=geomModel.grids.begin();
 
 	for( ;itG!=geomModel.grids.end();++itG){
 
-
 		uint id=0;
 		for(std::vector<Block>::const_iterator itB=itG->second.begin();itB!=itG->second.end();++itB){
 			outFile<< (int)itG->first<<","<<id++;
 
-			for(int i=0;i<itB->levelsHist.size();i++)
-			outFile<< ","<< itB->levelsHist[i];
-
+			for(uint i=0;i<itB->levelsHist.size();i++)
+				outFile<< ","<< itB->levelsHist[i];
 
 			for(std::vector<AverageCov>::const_iterator itA=itB->locationsHist.begin();itA!=itB->locationsHist.end();++itA)
 				outFile<<","<< itA->avg.at<double>(0,0)<<","<<itA->avg.at<double>(1,0);
@@ -1247,9 +1251,9 @@ void cv::softcascade::FastDtModel::saveModelIntoDat(String path){
 
 			outFile<<","<< itB->rect.x<<","<<itB->rect.y<<","<<itB->rect.width<<","<<itB->rect.height;
 			outFile<<","<< itB->energy<<"\n";
-
 		}
 	}
+	std::cout<<"\tCOMPLETED";
 }
 
 cv::softcascade::DetectorFast::DetectorFast(ParamDetectorFast param)
@@ -1553,6 +1557,11 @@ double *cv::softcascade::DetectorFast::multinormal_sample( int m, int n, double 
 
 //---------------------------------------------------------
 
+bool cv::softcascade::DetectorFast::load(const FileNode& cascadeModel)
+{
+	return Detector::load(cascadeModel);
+}
+
 
 bool cv::softcascade::DetectorFast::load(const FileNode& cascadeModel,const FileNode& fastModel)
 {
@@ -1653,9 +1662,17 @@ void cv::softcascade::DetectorFast::detectFastWithMask(cv::InputArray _image, cv
 
 
 
+/*
+				void (Fields::*method[2])(const int, const int, const Level&, const ChannelStorage& , dvector& ) const = NULL;
+
+
+				//method[0]=&fld.detectAt;
+				//method[1]=&fld.detectNOP;
+*/
 				double motion_sum;
-				double motion_rank;
-				for (int dy = startY; dy < endY; dy+=stepY)
+//				double motion_rank;
+
+				for (int dy = startY ; dy < endY; dy+=stepY)
 				{
 					for (int dx = startX; dx < endX; dx+=stepX)
 					{
@@ -1667,10 +1684,16 @@ void cv::softcascade::DetectorFast::detectFastWithMask(cv::InputArray _image, cv
 							}
 						}
 
-						motion_rank= motion_sum/(level.objSize.width*level.objSize.height);
 
-						if(motion_rank<th)
-							continue;
+
+//						motion_rank= motion_sum/(level.objSize.width*level.objSize.height);
+
+//						if(motion_rank<th)
+//							continue;
+						if(motion_sum<th*(level.objSize.width*level.objSize.height))
+								continue;
+
+//						method[motion_rank-th<0](dx, dy, level, storage, objects);
 
 						storage.offset = (int)(dy * storage.step + dx);
 						fld.detectAt(dx, dy, level, storage, objects);

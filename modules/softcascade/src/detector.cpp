@@ -865,31 +865,6 @@ void cv::softcascade::FastDtModel::GeomModel::compute(Size imgSize,uint levels){
 						strongLoc[g->first][b-g->second.begin()][level].push_back((double)(s->dw.x));
 						strongLoc[g->first][b-g->second.begin()][level].push_back((double)(s->dw.y));
 
-/*
-						bool duplicate=false;
-						for(int i=0;i<(int) (strongLoc.at(g->first).at(b-g->second.begin()).at(level).size())-1;i=i+2){
-
-							if( strongLoc[g->first][b-g->second.begin()][level][i]==(double)(s->dw.x) &&
-								strongLoc[g->first][b-g->second.begin()][level][i+1]==(double)(s->dw.y)
-
-							)
-							{
-								duplicate=true;
-								break;
-							}
-
-						}
-						if(!duplicate){
-							std::cout<<"\t Add strong ("<<s->dw.x<<","<<s->dw.y<<","<<s->dw.width<<","<<s->dw.height<<") in: "
-									<<" G- "<< g->first
-									<<" B- "<< b-g->second.begin()
-									<<" L- "<<level
-									<<std::endl;
-							// insert location in the order: x y
-							strongLoc[g->first][b-g->second.begin()][level].push_back((double)(s->dw.x));
-							strongLoc[g->first][b-g->second.begin()][level].push_back((double)(s->dw.y));
-						}
-*/
 						break;
 					}
 				}
@@ -933,19 +908,17 @@ void cv::softcascade::FastDtModel::GeomModel::compute(Size imgSize,uint levels){
 						calcCovarMatrix(positions, b->locationsHist[level].cov,b->locationsHist[level].avg, COVAR_NORMAL | COVAR_ROWS,CV_64FC1);
 						// Cov. Matrix NOT POSITIVE DEF
 						if(determinant(b->locationsHist[level].cov)==0.){
-							std::cout<<"\t<<<<Cov not definite positive>>>>";
-							// UNIFORM EXTRACTION IN THE BLOCK
-								std::cout<<"\t PERTURBATION ONE OBSERVATION:"<<std::endl;
+							std::cout<<"\t<<<<Cov not definite positive>>>>  PERTURBATION ALL OBSERVATION"<<std::endl;
+
 								RNG rng;
 
-								int rowI=cvCeil(rng.uniform(0., (double)(nStrong-1)));
+								Mat rngM(positions.size(),positions.type(),0.);
+								rng.fill(rngM, RNG::UNIFORM, 0., 2.);
 
-
-								positions.at<double>(rowI,0)+=rng.uniform(0., 4.);
-								positions.at<double>(rowI,1)+=rng.uniform(0., 4.);
+								positions+=rngM;
 								calcCovarMatrix(positions, b->locationsHist[level].cov,b->locationsHist[level].avg, COVAR_NORMAL | COVAR_ROWS,CV_64FC1);
 								if(determinant(b->locationsHist[level].cov)==0.){
-									std::cout<<"<<<\tError: Also with perturbation the Cov. Matrix remains not definite positive>>> ";
+									std::cout<<"<<<\tError: Also with perturbation the Cov. Matrix remains not definite positive>>>  DEFAULT INIT:";
 									exit(-1);
 							}
 
@@ -1796,8 +1769,8 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 
         for(uint b=0;b<blocks.size();b++){
 
-        	std::cout<<"\tBlock ";
-        	std::cout<<"\t Level "<<it-fld.levels.begin()<<"["<<level.workRect.width<<","<<level.workRect.height<<"]"<<std::endl;
+//        	std::cout<<"\tBlock: "<<b;
+//        	std::cout<<"\t Level "<<it-fld.levels.begin()<<"["<<level.workRect.width<<","<<level.workRect.height<<"]"<<std::endl;
 
         	int samplesTot=cvRound(fastModel.paramDtFast.gamma*pyramidSize*blocks[b].energy*blocks[b].levelsHist[it-fld.levels.begin()]);
 
@@ -1809,7 +1782,7 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
         	if(blocks[b].locationsHist[it-fld.levels.begin()].avg.at<double>(0,0)==-1. ||
         	   blocks[b].locationsHist[it-fld.levels.begin()].avg.at<double>(0,1)==-1.){
 
-        		std::cout<<"\t Uniform Sampling ("<<samplesTot<<")"<<std::endl;
+//        		std::cout<<"\t Uniform Sampling ("<<samplesTot<<")"<<std::endl;
 
         		int startX = cvRound((double)(blocks[b].rect.x)/fields->shrinkage);
         		int startY = cvRound((double)(blocks[b].rect.y)/fields->shrinkage);
@@ -1837,7 +1810,7 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
         	}
         	// Normal Sampling
         	else{
-
+/*
 	      	std::cout<<"\t Random Sampling ("<<samplesTot<<") ";
 				std::cout<<"Average("<< blocks[b].locationsHist[it-fld.levels.begin()].avg.at<double>(0,0)<<","
 										<<blocks[b].locationsHist[it-fld.levels.begin()].avg.at<double>(0,1)<<") ";
@@ -1846,12 +1819,12 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 										<<blocks[b].locationsHist[it-fld.levels.begin()].cov.at<double>(0,1)<<","
 										<<blocks[b].locationsHist[it-fld.levels.begin()].cov.at<double>(1,0)<<","
 										<<blocks[b].locationsHist[it-fld.levels.begin()].cov.at<double>(1,1)<<")"<<std::endl;
-
+*/
 				std::set<Point2i,classPoint2iComp> dw;
 
 				for(uint round=0;round<fastModel.paramDtFast.round;round++){
 
-					std::cout<< "--- Round "<<round<<" ---";
+//					std::cout<< "--- Round "<<round<<" ---";
 
 					// sampling
 					int seed=time(NULL);
@@ -1860,14 +1833,14 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 					double* sampling= multinormal_sample(2, samplesR, blocks[b].locationsHist[it-fld.levels.begin()].cov.ptr<double>(0),
 							blocks[b].locationsHist[it-fld.levels.begin()].avg.ptr<double>(0), &seed);
 					// print generated sampling
-					std::cout<<" samples: "<<std::endl;
+//					std::cout<<" samples: "<<std::endl;
 					for(int i=0; i<samplesR;i++){
-						std::cout<<"["<<level.workRect.width<<","<<level.workRect.height<<"]-"<<round<<"\t("<<sampling[2*i]<< " , "<< sampling[2*i+1]<< ") --->";
+	//					std::cout<<"["<<level.workRect.width<<","<<level.workRect.height<<"]-"<<round<<"\t("<<sampling[2*i]<< " , "<< sampling[2*i+1]<< ") --->";
 
 						// Rescale upperLeftpoints by shrinkage and check the validity
 						sampling[2*i]=  (sampling[2*i])/(fld.shrinkage);
 						sampling[2*i+1]=(sampling[2*i+1])/(fld.shrinkage);
-						std::cout<<" ("<<sampling[2*i]<< " , "<< sampling[2*i+1]<< ") ";
+//						std::cout<<" ("<<sampling[2*i]<< " , "<< sampling[2*i+1]<< ") ";
 
 						int samp_X=cvRound(sampling[2*i]);
 						int samp_Y=cvRound(sampling[2*i+1]);
@@ -1875,17 +1848,18 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 
 						if(samp_X>=0 && samp_Y>=0 && samp_X< level.workRect.width && samp_Y<level.workRect.height){
 							dw.insert(Point2i(samp_X,samp_Y));
-		        			std::cout<<"VALID: ("<<samp_X<< ","<<samp_Y<<")"<<std::endl;
+//		        			std::cout<<"VALID: ("<<samp_X<< ","<<samp_Y<<")"<<std::endl;
 						}
-						else{
+/*						else{
 							std::cout<<"<<< NOT VALID!! >>>"<<std::endl;
 						}
+*/
 					}
 
 					delete[] sampling;
 
-					std::cout<<std::endl;
-					std::cout<< "\t \t Valid sampled extracted so far: "<<dw.size()<<" of "<<samplesTot<<std::endl;
+//					std::cout<<std::endl;
+//					std::cout<< "\t \t Valid sampled extracted so far: "<<dw.size()<<" of "<<samplesTot<<std::endl;
 
 					if(samplesR==0)
 						break;
@@ -2120,15 +2094,24 @@ void cv::softcascade::DetectorTrace::getRejectionThreshols(std::vector< std::vec
 
 	std::vector<SOctave>::iterator itO;
 
+	std::cout<<"Extraction Rejected Thresholds: "<<std::endl;
+	ths=std::vector< std::vector<float> > (fields->octaves.end()-fields->octaves.begin(), std::vector<float>() );
+
 	for (itO=fields->octaves.begin();itO!=fields->octaves.end();++itO){
 
 		int stBegin = itO->index * itO->weaks, stEnd = stBegin + itO->weaks;
+		std::cout<<"\tOctave "<<itO-fields->octaves.begin()<<": ";
 
+		ths[itO-fields->octaves.begin()]=std::vector<float>(stEnd-stBegin,0.);
 		for(int st = stBegin; st < stEnd; ++st)
 		{
 			const Weak& weak = fields->weaks[st];
-			ths[itO-fields->octaves.begin()].push_back(weak.threshold);
+			std::cout<<weak.threshold<<" ";
+			ths[itO-fields->octaves.begin()][st-stBegin]=weak.threshold;
+
 		}
+
+		std::cout<<std::endl;
 	}
 }
 

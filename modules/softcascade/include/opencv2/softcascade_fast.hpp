@@ -404,8 +404,9 @@ struct classPoint2iComp{
 struct CV_EXPORTS Trace{
 
 	// Creates Trace from an object bounding box, confidence and subscores.
-	// Param index 			is identifier for each trace inner the pyramid
+	// Param index 			is identifier of each trace in a pyramid
 	// Param localMaxIndex  is identifier of local maximum trace that reject me (only if classification==POSITIVE)
+	//						Obs: index==localMaxIndex if this trace is local maximum
 	// Param octaveIndex	is index of octave (inner of pyramid) that contain the positive detection window (the enumeration starts with 0)
 	// Param numLevel  		is number of level  (inner of pyramid) that contain the positive detection window
 	// Param dw				is detection window

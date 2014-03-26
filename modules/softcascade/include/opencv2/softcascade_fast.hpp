@@ -38,7 +38,7 @@ namespace cv { namespace softcascade {
 struct CV_EXPORTS ParamDetectorFast
 {
 	ParamDetectorFast();
-	ParamDetectorFast(double minScale, double maxScale, uint nScale, int nMS, uint lastStage, uint gridSize,double gamma,uint round);
+	ParamDetectorFast(double minScale, double maxScale, uint nScale, int nMS, uint lastStage, uint gridSize,double gamma,uint round,bool exp);
 
 	// pyramid settings
 	double	minScale;
@@ -55,6 +55,8 @@ struct CV_EXPORTS ParamDetectorFast
 	uint 	gridSize;
 	double 	gamma;
 	uint 	round;
+	bool 	covMExpansion;
+
 };
 
 
@@ -329,10 +331,12 @@ public:
     virtual void detectFastWithMask(cv::InputArray _image, cv::InputArray _mask, double th,std::vector<Detection>& objects);
 
 
-    void setExecParam(uint lastStage,  uint gridSize, double gamma){
+    void setExecParam(uint lastStage,  uint gridSize, double gamma,bool covExp){
     	fastModel.paramDtFast.lastStage=lastStage;
     	fastModel.paramDtFast.gridSize=gridSize;
     	fastModel.paramDtFast.gamma=gamma;
+    	fastModel.paramDtFast.covMExpansion=covExp;
+
     };
 
     static void mergeModels(std::string outPath, std::vector<std::string>& modelsPath){

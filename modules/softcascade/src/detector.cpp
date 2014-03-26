@@ -998,12 +998,12 @@ bool cv::softcascade::FastDtModel::getLevelsForStage(uint  lastStage, std::vecto
 }
 
 cv::softcascade::ParamDetectorFast::ParamDetectorFast()
-: minScale(0.4) , maxScale(5.), nScales(55), nMS(1),lastStage(512)
+: minScale(0.4) , maxScale(5.), nScales(55), nMS(1),lastStage(512), gridSize(2), gamma(0.063), round(3), covMExpansion(true)
 {
 
 }
-cv::softcascade::ParamDetectorFast::ParamDetectorFast(double minS, double maxS, uint nS, int noMS, uint lastSt, uint gridS,double gam, uint rd)
-: minScale(minS) , maxScale(maxS), nScales(nS), nMS(noMS),lastStage(lastSt), gridSize(gridS), gamma(gam), round(rd)
+cv::softcascade::ParamDetectorFast::ParamDetectorFast(double minS, double maxS, uint nS, int noMS, uint lastSt, uint gridS,double gam, uint rd,bool covExp)
+: minScale(minS) , maxScale(maxS), nScales(nS), nMS(noMS),lastStage(lastSt), gridSize(gridS), gamma(gam), round(rd), covMExpansion(covExp)
 {}
 
 
@@ -1822,6 +1822,9 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 */
 				std::set<Point2i,classPoint2iComp> dw;
 
+
+				cv::Mat covM; blocks[b].locationsHist[it-fld.levels.begin()].cov.copyTo(covM);
+
 				for(uint round=0;round<fastModel.paramDtFast.round;round++){
 
 //					std::cout<< "--- Round "<<round<<" ---";
@@ -1830,7 +1833,7 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 					int seed=time(NULL);
 					int samplesR=samplesTot-(int)(dw.size());
 
-					double* sampling= multinormal_sample(2, samplesR, blocks[b].locationsHist[it-fld.levels.begin()].cov.ptr<double>(0),
+					double* sampling= multinormal_sample(2, samplesR, covM.ptr<double>(0),
 							blocks[b].locationsHist[it-fld.levels.begin()].avg.ptr<double>(0), &seed);
 					// print generated sampling
 //					std::cout<<" samples: "<<std::endl;
@@ -1863,6 +1866,11 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 
 					if(samplesR==0)
 						break;
+
+					if(fastModel.paramDtFast.covMExpansion){
+						covM*=((1.5)*(1.5));
+
+					}
 				}
 
 				for (std::set<Point2i >::iterator itDW=dw.begin();itDW!=dw.end();++itDW){

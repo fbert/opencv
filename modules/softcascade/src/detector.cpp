@@ -54,6 +54,8 @@ const char *const cv::softcascade::FastDtModel::PYRAMID="Pyramid_Setting";
 const char *const cv::softcascade::FastDtModel::PYRAMID_MINS="minScale";
 const char *const cv::softcascade::FastDtModel::PYRAMID_MAXS="maxScale";
 const char *const cv::softcascade::FastDtModel::PYRAMID_NS="nScales";
+
+
 const char *const cv::softcascade::FastDtModel::TRAININGS="Training_Set";
 const char *const cv::softcascade::FastDtModel::TRAININGS_DATAF="datasetFolder";
 const char *const cv::softcascade::FastDtModel::TRAININGS_NIMG="numImages";
@@ -905,9 +907,12 @@ void cv::softcascade::FastDtModel::GeomModel::compute(Size imgSize,uint levels){
 					b->locationsHist[level].avg=Mat(1,2,CV_64FC1);
 					try{
 						// CV_COVAR_NORMAL=1, CV_COVAR_ROWS=8
-						calcCovarMatrix(positions, b->locationsHist[level].cov,b->locationsHist[level].avg, COVAR_NORMAL | COVAR_ROWS,CV_64FC1);
+						calcCovarMatrix(positions, b->locationsHist[level].cov,b->locationsHist[level].avg, COVAR_NORMAL | COVAR_ROWS | COVAR_SCALE,CV_64FC1);
 						// Cov. Matrix NOT POSITIVE DEF
-						if(determinant(b->locationsHist[level].cov)==0.){
+						std::cout<<"\t Det:"<<FastDtModel::det(b->locationsHist[level].cov)<<std::endl;
+
+
+						if(FastDtModel::det(b->locationsHist[level].cov)<=0.){
 							std::cout<<"\t<<<<Cov not definite positive>>>>  PERTURBATION ALL OBSERVATION"<<std::endl;
 
 								RNG rng;
@@ -917,9 +922,9 @@ void cv::softcascade::FastDtModel::GeomModel::compute(Size imgSize,uint levels){
 
 								positions+=rngM;
 								calcCovarMatrix(positions, b->locationsHist[level].cov,b->locationsHist[level].avg, COVAR_NORMAL | COVAR_ROWS,CV_64FC1);
-								if(determinant(b->locationsHist[level].cov)==0.){
-									std::cout<<"<<<\tError: Also with perturbation the Cov. Matrix remains not definite positive>>>  DEFAULT INIT:";
-									exit(-1);
+								if(FastDtModel::det(b->locationsHist[level].cov)<=0.){
+									std::cout<<"<<<Also with perturbation the Cov. Matrix remains not definite positive>>>  EXCEPTION";
+									throw;
 							}
 
 						}
@@ -1243,7 +1248,7 @@ void cv::softcascade::FastDtModel::saveModelIntoDat(String path, String prefix){
 				outFile<< ","<< itB->levelsHist[i];
 
 			for(std::vector<AverageCov>::const_iterator itA=itB->locationsHist.begin();itA!=itB->locationsHist.end();++itA)
-				outFile<<","<< itA->avg.at<double>(0,0)<<","<<itA->avg.at<double>(1,0);
+				outFile<<","<< itA->avg.at<double>(0)<<","<<itA->avg.at<double>(1);
 
 			for(std::vector<AverageCov>::const_iterator itC=itB->locationsHist.begin();itC!=itB->locationsHist.end();++itC)
 				outFile<<","<< itC->cov.at<double>(0,0)<<","<<itC->cov.at<double>(0,1)<<","
@@ -1946,6 +1951,7 @@ void DollarNMSTrace(std::vector<cv::softcascade::Trace>& positiveTrace, bool noM
         positiveTrace[dIt->index].classType=cv::softcascade::Trace::LOCALMAXIMUM;
         positiveTrace[dIt->index].localMaxIndex=dIt->index;
 
+        uint64 lowScoreI=dIt->index;
         for (std::vector<cv::softcascade::Trace>::iterator next = dIt + 1; next != objects.end(); )
         {
             const Detection &b = next->detection;
@@ -1954,11 +1960,15 @@ void DollarNMSTrace(std::vector<cv::softcascade::Trace>& positiveTrace, bool noM
 
             if (ovl > DollarThreshold){
             	positiveTrace[next->index].localMaxIndex=dIt->index;
+            	lowScoreI=next->index;
             	next = objects.erase(next);
             }
             else
                 ++next;
         }
+        // set lowest trace Index
+        positiveTrace[dIt->index].localMinIndex=lowScoreI;
+
     }
     if(noMaxSupp){
         for (std::vector<cv::softcascade::Trace>::iterator it = positiveTrace.begin(); it != positiveTrace.end();){
@@ -1974,7 +1984,7 @@ void DollarNMSTrace(std::vector<cv::softcascade::Trace>& positiveTrace, bool noM
 
 
 cv::softcascade::Trace::Trace(const uint64 ind,const uint octave, const uint level, const Detection& dw, const std::vector<float>& scores, const std::vector<float>& stagesResp, const int classification)
- :index(ind),octaveIndex(octave),levelIndex(level),detection(dw.bb(),dw.confidence,dw.kind), subscores(scores),stages(stagesResp),classType(classification) {localMaxIndex=-1;}
+ :index(ind),octaveIndex(octave),levelIndex(level),detection(dw.bb(),dw.confidence,dw.kind), subscores(scores),stages(stagesResp),classType(classification) {localMaxIndex=localMinIndex=-1;}
 
 
 /*

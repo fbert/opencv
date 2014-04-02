@@ -101,6 +101,11 @@ struct CV_EXPORTS FastDtModel
     void smoothLocations();
     void saveModelIntoDat(String path,String prefix="");
 
+
+    static double det(const Mat& inM){
+    	return inM.at<double>(0,0)*inM.at<double>(1,1) - (inM.at<double>(0,1)*inM.at<double>(1,0));
+    }
+
     // for now, merging geometric models only
     static FastDtModel mergeModels(const std::vector<FastDtModel>& models){
     	FastDtModel outModel;
@@ -411,6 +416,8 @@ struct CV_EXPORTS Trace{
 	// Param index 			is identifier of each trace in a pyramid
 	// Param localMaxIndex  is identifier of local maximum trace that reject me (only if classification==POSITIVE)
 	//						Obs: index==localMaxIndex if this trace is local maximum
+	// Param localMinIndex  is identifier of lowest trace, only strongs have this information
+	//						Obs: if |ROS|=1 than localMinIndex=localMaxIndex
 	// Param octaveIndex	is index of octave (inner of pyramid) that contain the positive detection window (the enumeration starts with 0)
 	// Param numLevel  		is number of level  (inner of pyramid) that contain the positive detection window
 	// Param dw				is detection window
@@ -420,6 +427,7 @@ struct CV_EXPORTS Trace{
 	enum{NEGATIVE=0,POSITIVE,LOCALMAXIMUM};
 	uint64 	index;
 	uint64 	localMaxIndex;
+	uint64 	localMinIndex;
 	uint 	octaveIndex;
 	uint 	levelIndex;
 	Detection detection;

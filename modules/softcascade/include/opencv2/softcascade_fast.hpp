@@ -38,7 +38,7 @@ namespace cv { namespace softcascade {
 struct CV_EXPORTS ParamDetectorFast
 {
 	ParamDetectorFast();
-	ParamDetectorFast(double minScale, double maxScale, uint nScale, int nMS, uint lastStage, uint gridSize,double gamma,uint round,bool exp);
+	ParamDetectorFast(double minScale, double maxScale, uint nScale, int nMS, uint lastStage, uint gridSize,double gamma,uint round,bool exp, bool unE);
 
 	// pyramid settings
 	double	minScale;
@@ -56,6 +56,7 @@ struct CV_EXPORTS ParamDetectorFast
 	double 	gamma;
 	uint 	round;
 	bool 	covMExpansion;
+	bool	uniformEnergy;
 
 };
 
@@ -307,6 +308,22 @@ inline void read(const cv::FileNode& node, FastDtModel& x, const FastDtModel& de
 //std::ostream& operator<<(std::ostream& out, const FastDtModel& m);
 
 
+struct classPoint2iComp{
+	inline bool operator()(const Point2i& a, const Point2i& b){
+		return (a.x<=b.x)&&(a.y!=b.y);
+
+	}
+};
+
+struct CV_EXPORTS Sample{
+	enum {UNIFORM, NORMAL};
+	Sample(	cv::Rect d, int l, int t):dw(d),level(l),genType(t)
+	{};
+
+	cv::Rect dw;
+    int level;
+    int genType;
+};
 
 class CV_EXPORTS_W DetectorFast: public Detector{
 
@@ -335,13 +352,14 @@ public:
     virtual void detectFast(cv::InputArray _image,std::vector<Detection>& objects);
     virtual void detectFastWithMask(cv::InputArray _image, cv::InputArray _mask, double th,std::vector<Detection>& objects);
 
+    void generateSamples(cv::Size imgSize,std::vector<Sample>& samples);
 
-    void setExecParam(uint lastStage,  uint gridSize, double gamma,bool covExp){
+    void setExecParam(uint lastStage,  uint gridSize, double gamma,bool covExp,bool uE){
     	fastModel.paramDtFast.lastStage=lastStage;
     	fastModel.paramDtFast.gridSize=gridSize;
     	fastModel.paramDtFast.gamma=gamma;
     	fastModel.paramDtFast.covMExpansion=covExp;
-
+    	fastModel.paramDtFast.uniformEnergy=uE;
     };
 
     static void mergeModels(std::string outPath, std::vector<std::string>& modelsPath){
@@ -384,6 +402,15 @@ private:
     double *r8vec_normal_01_new ( int n, int *seed);
     double *multinormal_sample( int m, int n, double a[], double mu[], int *seed);
 
+    inline bool isUniformSampling(const cv::Mat& mat){
+    	return (mat.at<double>(0,0)==-1. || mat.at<double>(0,1)==-1.);
+    };
+
+    // generate samples by Geometric-Model
+    void rndSamples(const Level& level,	std::set<Point2i,classPoint2iComp>& dw, cv::Mat& avgM, cv::Mat& covM,const int samplesTot);
+    void uniSamples(const FastDtModel::Block& block, const Level& level,
+    		int& startX,int& startY, int& endX, int& endY, int& stepX, int& stepY,
+    		const int samplesTot);
 
 	struct CV_EXPORTS TempInfo{
     	int rejCriteria;
@@ -395,12 +422,7 @@ private:
 	FastDtModel fastModel;
 
 };
-struct classPoint2iComp{
-	inline bool operator()(const Point2i& a, const Point2i& b){
-		return (a.x<=b.x)&&(a.y!=b.y);
 
-	}
-};
 
 
 

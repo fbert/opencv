@@ -863,9 +863,21 @@ void cv::softcascade::FastDtModel::GeomModel::compute(Size imgSize,uint levels){
 								<<" B- "<< b-g->second.begin()
 								<<" L- "<<level
 								<<std::endl;
-						// insert location in the order: x y
-						strongLoc[g->first][b-g->second.begin()][level].push_back((double)(s->dw.x));
-						strongLoc[g->first][b-g->second.begin()][level].push_back((double)(s->dw.y));
+
+						// insert location (with unique check) in the order: x y
+						bool duplicate=false;
+						for(uint xI=0;xI<strongLoc[g->first][b-g->second.begin()][level].size();xI=xI+2){
+							if(strongLoc[g->first][b-g->second.begin()][level][xI]== (double)(s->dw.x) &&
+							   strongLoc[g->first][b-g->second.begin()][level][xI+1]== (double)(s->dw.y)){
+
+								duplicate=true;
+								break;
+							}
+						}
+						if(!duplicate){
+							strongLoc[g->first][b-g->second.begin()][level].push_back((double)(s->dw.x));
+							strongLoc[g->first][b-g->second.begin()][level].push_back((double)(s->dw.y));
+						}
 
 						break;
 					}
@@ -882,6 +894,7 @@ void cv::softcascade::FastDtModel::GeomModel::compute(Size imgSize,uint levels){
 		for(std::vector<Block>::iterator b=g->second.begin();b!=g->second.end();++b){
 			std::cout<<"\t Block " <<b-g->second.begin() <<std::endl;
 			energyTot[g->first]+=std::accumulate(b->levelsHist.begin(),b->levelsHist.end(),0.);
+
 
 			// compute average and covariance
 			for(uint level=0;level<levels;level++){
@@ -918,7 +931,7 @@ void cv::softcascade::FastDtModel::GeomModel::compute(Size imgSize,uint levels){
 								RNG rng;
 
 								Mat rngM(positions.size(),positions.type(),0.);
-								rng.fill(rngM, RNG::UNIFORM, 0., 2.);
+								rng.fill(rngM, RNG::UNIFORM, 0., 5.);
 
 								positions+=rngM;
 								calcCovarMatrix(positions, b->locationsHist[level].cov,b->locationsHist[level].avg, COVAR_NORMAL | COVAR_ROWS,CV_64FC1);
@@ -1007,8 +1020,8 @@ cv::softcascade::ParamDetectorFast::ParamDetectorFast()
 {
 
 }
-cv::softcascade::ParamDetectorFast::ParamDetectorFast(double minS, double maxS, uint nS, int noMS, uint lastSt, uint gridS,double gam, uint rd,bool covExp)
-: minScale(minS) , maxScale(maxS), nScales(nS), nMS(noMS),lastStage(lastSt), gridSize(gridS), gamma(gam), round(rd), covMExpansion(covExp)
+cv::softcascade::ParamDetectorFast::ParamDetectorFast(double minS, double maxS, uint nS, int noMS, uint lastSt, uint gridS,double gam, uint rd,bool covExp,bool uE)
+: minScale(minS) , maxScale(maxS), nScales(nS), nMS(noMS),lastStage(lastSt), gridSize(gridS), gamma(gam), round(rd), covMExpansion(covExp), uniformEnergy(uE)
 {}
 
 
@@ -1216,7 +1229,7 @@ void cv::softcascade::FastDtModel::saveModelIntoDat(String path, String prefix){
 	// Trace Approximation
 	std::cout<<"Saving Trace Approximation...";
 	std::ofstream outFile;
-	outFile.open((path+"/"+prefix+"-"+TraceModel::TRACEMODEL+".dat").c_str(),std::ofstream::out);
+	outFile.open((path+"/"+prefix+"_"+TraceModel::TRACEMODEL+".dat").c_str(),std::ofstream::out);
 
 	TraceModel::SlopesMap::const_iterator itS= traceModel.slopes.begin();
 
@@ -1234,7 +1247,7 @@ void cv::softcascade::FastDtModel::saveModelIntoDat(String path, String prefix){
 
 	// Geometry Model
 	std::cout<<"Saving Geometric Histograms...";
-	outFile.open((path+"/"+prefix+"-"+GeomModel::GEOMMODEL+".dat").c_str(),std::ofstream::out);
+	outFile.open((path+"/"+prefix+"_"+GeomModel::GEOMMODEL+".dat").c_str(),std::ofstream::out);
 
 	GeomModel::Grids::const_iterator itG=geomModel.grids.begin();
 
@@ -1530,7 +1543,7 @@ double *cv::softcascade::DetectorFast::multinormal_sample( int m, int n, double 
   {
     std::cout << "\n";
     std::cout << "MULTINORMAL_SAMPLE - Fatal error!\n";
-    std::cout << "  The variance-covariance matrix is not positive definite symmetric.\n";
+    std::cout << "  The variance-covariance matrix is not positive definite symmetric\n";
     exit ( 1 );
   }
 //
@@ -1569,148 +1582,370 @@ bool cv::softcascade::DetectorFast::load(const FileNode& cascadeModel)
 }
 
 
-bool cv::softcascade::DetectorFast::load(const FileNode& cascadeModel,const FileNode& fastModel)
+bool cv::softcascade::DetectorFast::load(const FileNode& cascadeModel,const FileNode& ftModel)
 {
-	return Detector::load(cascadeModel)&&loadModel(fastModel);
+	return Detector::load(cascadeModel)&&loadModel(ftModel);
 }
 void cv::softcascade::DetectorFast::saveModelIntoDat(String path){
 	fastModel.saveModelIntoDat(path);
 }
 
 void cv::softcascade::DetectorFast::detectFastWithMask(cv::InputArray _image, cv::InputArray _m, double th,std::vector<Detection>& objects){
+	/*
+		uint lastStage=fastModel.paramDtFast.lastStage;
+		// set new recjection criteria and octave'paramters for tracerestore it later
+		rejCriteria=NO_REJECT;
+		for (uint i=0;i<fields->octaves.size();i++){
+			fields->octaves[i].index=(int)(fields->octaves[i].weaks*fields->octaves[i].index)/lastStage;
+			fields->octaves[i].weaks= lastStage;
+		}
 
 
-	uint currentSize;
+		double slope;
+	*/
+		uint currentSize;
+
+		std::vector<FastDtModel::Block> blocks=fastModel.getBlocks4Grid(fastModel.paramDtFast.gridSize);
+
+	    // only color images are suppered
+	    cv::Mat image = _image.getMat();
+	    CV_Assert(image.type() == CV_8UC3);
+		cv::Mat mask= _m.getMat();
+		mask.convertTo(mask, CV_32SC1);
 
 
-	std::vector<FastDtModel::Block> blocks=fastModel.getBlocks4Grid(fastModel.paramDtFast.gridSize);
+	    fields->calcLevels(image.size(),(float) minScale, (float)maxScale, scales);
+	    objects.clear();
 
-	// only color images are suppered
-	cv::Mat image = _image.getMat();
-	CV_Assert(image.type() == CV_8UC3);
+	//--- Execution detection phase with NO_REJECT (detectNoROI function) -
 
-	cv::Mat mask= _m.getMat();
-	mask.convertTo(mask, CV_32SC1);
+		Fields& fld = *fields;
+	    // create integrals
+	   ChannelStorage storage(image, fld.shrinkage, fld.featureTypeStr);
 
-	fields->calcLevels(image.size(),(float) minScale, (float)maxScale, scales);
-	objects.clear();
+	    typedef std::vector<Level>::const_iterator lIt;
 
-//--- Execution detection phase with NO_REJECT (detectNoROI function) -
+	    // compute the pyramid size (total number of dw)
+	    double pyramidSize=0.;
+	    for (lIt it = fld.levels.begin(); it != fld.levels.end(); ++it)
+	    {
+	        const Level& level = *it;
 
-	Fields& fld = *fields;
-	// create integrals
-    ChannelStorage storage(image, fld.shrinkage, fld.featureTypeStr);
+	        // we train only 3 scales.
+	        if (level.origScale > 2.5) break;
 
-    int shr = fld.shrinkage;
+	        pyramidSize+=(double)level.workRect.height*level.workRect.width;
 
-	typedef std::vector<Level>::const_iterator lIt;
+	    }
+	//    std::cout<< "Size of Pyramid: "<<pyramidSize<< "dw"<< std::endl;
 
-	// compute the pyramid size (total number of dw)
-	double pyramidSize=0.;
-	for (lIt it = fld.levels.begin(); it != fld.levels.end(); ++it)
-	{
-		const Level& level = *it;
+	    for (lIt it = fld.levels.begin(); it != fld.levels.end(); ++it)
+	    {
+	        const Level& level = *it;
 
-		// we train only 3 scales.
-		if (level.origScale > 2.5) break;
+	        // we train only 3 scales.
+	        if (level.origScale > 2.5) break;
 
-		pyramidSize+=(double)level.workRect.height*level.workRect.width;
+	        currentSize=objects.size();
 
-	}
-//    std::cout<< "Size of Pyramid: "<<pyramidSize<< "dw"<< std::endl;
+	        //############ Sampling by geometric model #######################
+	//  std::cout<<std::endl<<"\t level "<<it - fld.levels.begin()<<std::endl;
 
-	for (lIt it = fld.levels.begin(); it != fld.levels.end(); ++it)
-	{
-		const Level& level = *it;
+	        for(uint b=0;b<blocks.size();b++){
 
-		// we train only 3 scales.
-		if (level.origScale > 2.5) break;
+	//        	std::cout<<"\tBlock: "<<b;
+	//        	std::cout<<"\t Level "<<it-fld.levels.begin()<<"["<<level.workRect.width<<","<<level.workRect.height<<"]"<<std::endl;
 
-		currentSize=objects.size();
+	        	int samplesTot=cvRound(fastModel.paramDtFast.gamma*pyramidSize*blocks[b].energy*blocks[b].levelsHist[it-fld.levels.begin()]);
 
-		//############ Sampling by geometric model #######################
-//  std::cout<<std::endl<<"\t level "<<it - fld.levels.begin()<<std::endl;
+	//        	std::cout<< " n° dw to extract: "<< remainingSamp<<std::endl;
+	        	if(samplesTot==0)
+	        		continue;
 
-		for(uint b=0;b<blocks.size();b++){
-
-			int remainingSamp=cvCeil(fastModel.paramDtFast.gamma*pyramidSize*blocks[b].energy*blocks[b].levelsHist[it-fld.levels.begin()]);
-
-//        	std::cout<< " n° dw to extract: "<< remainingSamp<<std::endl;
-			if(remainingSamp==0)
-				break;
-
-
-//Uniform sampling ( avg=(-1,-1) )
-
-/*        	if(blocks[b].locationsHist[it-fld.levels.begin()].avg.at<double>(0,0)==-1. ||
-			   blocks[b].locationsHist[it-fld.levels.begin()].avg.at<double>(0,1)==-1.){
-*/
-			 //std::cout<<"\t \t Block "<<b<< "\t Uniform Sampling ("<<remainingSamp<<")"<<std::endl;
-
-				int startX = cvRound((double)(blocks[b].rect.x)/shr);
-				int startY = cvRound((double)(blocks[b].rect.y)/shr);
-				int endX   = std::min(cvRound((double)(blocks[b].rect.x+blocks[b].rect.width) /shr),
-									  level.workRect.width);
-				int endY   = std::min(cvRound((double)(blocks[b].rect.y+blocks[b].rect.height) /shr),
-									  level.workRect.height);
-
-				int stepX=cvRound((double)(endX-startX+1)/std::sqrt(remainingSamp));
-				if(stepX<1)
-					stepX=1;
-
-				int stepY=cvRound((double)(endY-startY+1)/std::sqrt(remainingSamp));
-				if(stepY<1)
-					stepY=1;
-
-
-//        		std::cout<<"Block "<<b<< "("<<remainingSamp<<")"<<": ("<<startX<<" , "<<startY<<" , "<<endX<<","<<endY<<") - ("
-//        				 <<stepX<<","<<stepY<<")"<<std::endl;
-
-
-
-/*
-				void (Fields::*method[2])(const int, const int, const Level&, const ChannelStorage& , dvector& ) const = NULL;
-
-
-				//method[0]=&fld.detectAt;
-				//method[1]=&fld.detectNOP;
-*/
 				double motion_sum;
-//				double motion_rank;
 
-				for (int dy = startY ; dy < endY; dy+=stepY)
-				{
-					for (int dx = startX; dx < endX; dx+=stepX)
-					{
+	        	//Uniform sampling ( avg=(-1,-1) )
+	        	if( isUniformSampling(blocks[b].locationsHist[it-fld.levels.begin()].avg) ){
+
+	//        		std::cout<<"\t Uniform Sampling ("<<samplesTot<<")"<<std::endl;
+
+	        		int startX,startY, endX, endY, stepX, stepY;
+	        		uniSamples(blocks[b],level,startX,startY, endX, endY, stepX, stepY,samplesTot);
+
+
+	                for (int dy = startY; dy < endY; dy+=stepY)
+	                {
+	                    for (int dx = startX; dx < endX; dx+=stepX)
+	                    {
+							motion_sum=0.;
+
+							for(int y=cvRound(dy * fld.shrinkage); y<cvRound(dy * fld.shrinkage)+level.objSize.height;y++){
+								for(int x=cvRound(dx * fld.shrinkage); x<=cvRound(dx * fld.shrinkage)+level.objSize.width;x++){
+									motion_sum+= mask.ptr<int>(y)[x];
+								}
+							}
+
+							if(motion_sum<th*(level.objSize.width*level.objSize.height))
+									continue;
+
+	                    	storage.offset = (int)(dy * storage.step + dx);
+	                        fld.detectAt(dx, dy, level, storage, objects);
+	                    }
+	                }
+	        	}
+	        	// Normal Sampling
+	        	else{
+	/*
+		      	std::cout<<"\t Random Sampling ("<<samplesTot<<") ";
+					std::cout<<"Average("<< blocks[b].locationsHist[it-fld.levels.begin()].avg.at<double>(0,0)<<","
+											<<blocks[b].locationsHist[it-fld.levels.begin()].avg.at<double>(0,1)<<") ";
+
+					std::cout<<"Cov ("<< blocks[b].locationsHist[it-fld.levels.begin()].cov.at<double>(0,0)<<","
+											<<blocks[b].locationsHist[it-fld.levels.begin()].cov.at<double>(0,1)<<","
+											<<blocks[b].locationsHist[it-fld.levels.begin()].cov.at<double>(1,0)<<","
+											<<blocks[b].locationsHist[it-fld.levels.begin()].cov.at<double>(1,1)<<")"<<std::endl;
+	*/
+					std::set<Point2i,classPoint2iComp> dw;
+
+					cv::Mat covM; blocks[b].locationsHist[it-fld.levels.begin()].cov.copyTo(covM);
+					cv::Mat avgM=blocks[b].locationsHist[it-fld.levels.begin()].avg;
+
+					rndSamples(level,dw,avgM,covM,samplesTot);
+
+
+					for (std::set<Point2i >::iterator itDW=dw.begin();itDW!=dw.end();++itDW){
 						motion_sum=0.;
 
-						for(int y=cvRound(dy * shr); y<cvRound(dy * shr)+level.objSize.height;y++){
-							for(int x=cvRound(dx * shr); x<=cvRound(dx * shr)+level.objSize.width;x++){
+						for(int y=cvRound(itDW->y* fld.shrinkage); y<cvRound(itDW->y* fld.shrinkage)+level.objSize.height;y++){
+							for(int x=cvRound(itDW->x* fld.shrinkage); x<=cvRound(itDW->x* fld.shrinkage)+level.objSize.width;x++){
 								motion_sum+= mask.ptr<int>(y)[x];
 							}
 						}
-
-
-
-//						motion_rank= motion_sum/(level.objSize.width*level.objSize.height);
-
-//						if(motion_rank<th)
-//							continue;
 						if(motion_sum<th*(level.objSize.width*level.objSize.height))
 								continue;
 
-//						method[motion_rank-th<0](dx, dy, level, storage, objects);
-
-						storage.offset = (int)(dy * storage.step + dx);
-						fld.detectAt(dx, dy, level, storage, objects);
-
+						storage.offset = itDW->y * storage.step + itDW->x;
+						fld.detectAt(itDW->x, itDW->y, level, storage, objects);
 					}
 				}
+
+		/*
+				//############# Compute the final score for each positive dw by approximation ###########
+				fastModel.getSlopeAt(lastStage,it-fld.levels.begin(),slope);
+
+				for(uint i=currentSize;i<objects.size();i++){
+					objects[i].confidence+=(1024-lastStage)*slope;
+				}
+				//######################################################################
+		  */
+
+			}
+	   	}
+
+
+
+
+	/*
+	//-------------------------------------------------------------------
+
+	//----------- Restore recjection criteria and octave'paramters ------
+		rejCriteria=tempI.rejCriteria;
+		for (uint i=0;i<fields->octaves.size();i++){
+			fields->octaves[i].index=tempI.index[i];
+			fields->octaves[i].weaks= tempI.weaks[i];
 		}
-	}
-	if (rejCriteria != NO_REJECT) suppress(rejCriteria, objects);
+	//--------------------------------------------------------------------
+	*/
+
+
+		if (rejCriteria != NO_REJECT) suppress(rejCriteria, objects);
+
+
 }
 
+void cv::softcascade::DetectorFast::uniSamples(const FastDtModel::Block& block, const Level& level,
+		int& startX,int& startY, int& endX, int& endY, int& stepX, int& stepY,
+		const int samplesTot)
+{
+
+	startX = cvRound((double)(block.rect.x)/fields->shrinkage);
+	startY = cvRound((double)(block.rect.y)/fields->shrinkage);
+	endX   = std::min(cvRound((double)(block.rect.x+block.rect.width) /fields->shrinkage),
+						  level.workRect.width-1);
+	endY   = std::min(cvRound((double)(block.rect.y+block.rect.height) /fields->shrinkage),
+						  level.workRect.height-1);
+
+	stepX=cvRound((double)(endX-startX+1)/std::sqrt(samplesTot));
+	if(stepX<1)
+		stepX=1;
+
+	stepY=cvRound((double)(endY-startY+1)/std::sqrt(samplesTot));
+	if(stepY<1)
+		stepY=1;
+}
+void cv::softcascade::DetectorFast::rndSamples(const Level& level,
+		std::set<Point2i,classPoint2iComp>& dw, cv::Mat& avgM, cv::Mat& covM,const int samplesTot){
+
+	for(uint round=0;round<fastModel.paramDtFast.round;round++){
+
+//					std::cout<< "--- Round "<<round<<" ---";
+
+		// sampling
+		int seed=time(NULL);
+		int samplesR=samplesTot-(int)(dw.size());
+
+		double* sampling= multinormal_sample(2, samplesR, covM.ptr<double>(0),
+				avgM.ptr<double>(0), &seed);
+		// print generated sampling
+//					std::cout<<" samples: "<<std::endl;
+		for(int i=0; i<samplesR;i++){
+//					std::cout<<"["<<level.workRect.width<<","<<level.workRect.height<<"]-"<<round<<"\t("<<sampling[2*i]<< " , "<< sampling[2*i+1]<< ") --->";
+
+			// Rescale upperLeftpoints by shrinkage and check the validity
+			sampling[2*i]=  (sampling[2*i])/(fields->shrinkage);
+			sampling[2*i+1]=(sampling[2*i+1])/(fields->shrinkage);
+//						std::cout<<" ("<<sampling[2*i]<< " , "<< sampling[2*i+1]<< ") ";
+
+			int samp_X=cvRound(sampling[2*i]);
+			int samp_Y=cvRound(sampling[2*i+1]);
+
+
+			if(samp_X>=0 && samp_Y>=0 && samp_X< level.workRect.width && samp_Y<level.workRect.height){
+				dw.insert(Point2i(samp_X,samp_Y));
+//		        			std::cout<<"VALID: ("<<samp_X<< ","<<samp_Y<<")"<<std::endl;
+			}
+/*						else{
+				std::cout<<"<<< NOT VALID!! >>>"<<std::endl;
+			}
+*/
+		}
+
+		delete[] sampling;
+
+//					std::cout<<std::endl;
+//					std::cout<< "\t \t Valid sampled extracted so far: "<<dw.size()<<" of "<<samplesTot<<std::endl;
+
+		if(samplesR==0)
+			break;
+
+		if(fastModel.paramDtFast.covMExpansion){
+			covM*=((1.5)*(1.5));
+
+		}
+	}
+
+
+}
+
+void cv::softcascade::DetectorFast::generateSamples(cv::Size imgSize,std::vector<Sample>& samples){
+		uint currentSize;
+
+		std::vector<FastDtModel::Block> blocks=fastModel.getBlocks4Grid(fastModel.paramDtFast.gridSize);
+
+
+	    fields->calcLevels(imgSize,(float) minScale, (float)maxScale, scales);
+	    samples.clear();
+
+	//--- Execution detection phase with NO_REJECT (detectNoROI function) -
+
+		Fields& fld = *fields;
+
+	    typedef std::vector<Level>::const_iterator lIt;
+
+	    // compute the pyramid size (total number of dw)
+	    double pyramidSize=0.;
+	    for (lIt it = fld.levels.begin(); it != fld.levels.end(); ++it)
+	    {
+	        const Level& level = *it;
+
+	        // we train only 3 scales.
+	        if (level.origScale > 2.5) break;
+
+	        pyramidSize+=(double)level.workRect.height*level.workRect.width;
+
+	    }
+		std::cout<<"Grid: "<<fastModel.paramDtFast.gridSize<<" - Gamma:"<<fastModel.paramDtFast.gamma;
+	    std::cout<< " Size of Pyramid: "<<pyramidSize<< "dw"<< std::endl;
+
+		double uEnergy=1./(fastModel.paramDtFast.gridSize*fastModel.paramDtFast.gridSize);
+
+	    for (lIt it = fld.levels.begin(); it != fld.levels.end(); ++it)
+	    {
+	        const Level& level = *it;
+
+	        // we train only 3 scales.
+	        if (level.origScale > 2.5) break;
+
+	        currentSize=samples.size();
+
+	        //############ Sampling by geometric model #######################
+
+	        std::cout<< "\tLevel "<<it-fld.levels.begin()<< ":"<< std::endl;
+	        for(uint b=0;b<blocks.size();b++){
+
+	        	std::cout<< "\t\tBlock "<<b<<" ["<<blocks[b].rect.x<<","<<blocks[b].rect.y
+	        			<<","<<blocks[b].rect.width<<","<<blocks[b].rect.height<<"]";
+
+	        	int samplesTot;
+
+	        	if(fastModel.paramDtFast.uniformEnergy){
+	        		samplesTot=cvRound(fastModel.paramDtFast.gamma*pyramidSize*uEnergy*blocks[b].levelsHist[it-fld.levels.begin()]);
+	        	}
+	        	else
+	        		samplesTot=cvRound(fastModel.paramDtFast.gamma*pyramidSize*blocks[b].energy*blocks[b].levelsHist[it-fld.levels.begin()]);
+
+	        	if(samplesTot==0){
+	        		std::cout<< " EMPTY\n";
+	        		continue;
+	        	}
+	        	std::cout<<"["<<samplesTot<<"] ";
+	        	//Uniform sampling ( avg=(-1,-1) )
+	        	if( isUniformSampling(blocks[b].locationsHist[it-fld.levels.begin()].avg) ){
+	        		std::cout<< " Uniform[";
+
+	        		int startX,startY, endX, endY, stepX, stepY;
+	        		uniSamples(blocks[b],level,startX,startY, endX, endY, stepX, stepY,samplesTot);
+
+	        		int numS=0;
+	        		std::cout<<startX<< ":"<<stepX<<":"<<endX<<"] ["<<startY<<":"<<stepY<<":"<<endY<<"] ";
+	                for (int dy = startY; dy < endY; dy+=stepY)
+	                {
+	                    for (int dx = startX; dx < endX; dx+=stepX)
+	                    {
+	                    	Rect rect((dx * fld.shrinkage),(dy * fld.shrinkage),
+	                    			level.objSize.width,level.objSize.height);
+
+	                    	samples.push_back(Sample(rect, it - fld.levels.begin(),Sample::UNIFORM));
+	                    	numS++;
+	                    }
+	                }
+	                std::cout<< "("<<numS<<") - Workrect["<<level.workRect.width<<","<<level.workRect.height<<"]"<<std::endl;
+	        	}
+	        	// Normal Sampling
+	        	else{
+
+					std::set<Point2i,classPoint2iComp> dw;
+
+
+					cv::Mat covM(2,2,CV_64FC1);blocks[b].locationsHist[it-fld.levels.begin()].cov.copyTo(covM);
+					cv::Mat avgM=blocks[b].locationsHist[it-fld.levels.begin()].avg;
+
+					rndSamples(level,dw,avgM,covM,samplesTot);
+
+
+					for (std::set<Point2i >::iterator itDW=dw.begin();itDW!=dw.end();++itDW){
+
+                    	Rect rect(itDW->x* fld.shrinkage,itDW->y* fld.shrinkage,
+                    			level.objSize.width,level.objSize.height);
+
+						samples.push_back(Sample(rect, it - fld.levels.begin(),Sample::NORMAL));
+					}
+					std::cout<< " Normal("<<dw.size()<<")"<<std::endl;
+				}
+
+			}
+	   	}
+}
 
 void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector<Detection>& objects)
 {
@@ -1760,6 +1995,8 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
     }
 //    std::cout<< "Size of Pyramid: "<<pyramidSize<< "dw"<< std::endl;
 
+	double uEnergy=1./(fastModel.paramDtFast.gridSize*fastModel.paramDtFast.gridSize);
+
     for (lIt it = fld.levels.begin(); it != fld.levels.end(); ++it)
     {
         const Level& level = *it;
@@ -1777,32 +2014,24 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 //        	std::cout<<"\tBlock: "<<b;
 //        	std::cout<<"\t Level "<<it-fld.levels.begin()<<"["<<level.workRect.width<<","<<level.workRect.height<<"]"<<std::endl;
 
-        	int samplesTot=cvRound(fastModel.paramDtFast.gamma*pyramidSize*blocks[b].energy*blocks[b].levelsHist[it-fld.levels.begin()]);
+        	int samplesTot;
 
-//        	std::cout<< " n° dw to extract: "<< remainingSamp<<std::endl;
+        	if(fastModel.paramDtFast.uniformEnergy){
+        		samplesTot=cvRound(fastModel.paramDtFast.gamma*pyramidSize*uEnergy*blocks[b].levelsHist[it-fld.levels.begin()]);
+        	}
+        	else
+        		samplesTot=cvRound(fastModel.paramDtFast.gamma*pyramidSize*blocks[b].energy*blocks[b].levelsHist[it-fld.levels.begin()]);
+
+        	//        	std::cout<< " n° dw to extract: "<< remainingSamp<<std::endl;
         	if(samplesTot==0)
-        		break;
+        		continue;
 
         	//Uniform sampling ( avg=(-1,-1) )
-        	if(blocks[b].locationsHist[it-fld.levels.begin()].avg.at<double>(0,0)==-1. ||
-        	   blocks[b].locationsHist[it-fld.levels.begin()].avg.at<double>(0,1)==-1.){
-
+        	if( isUniformSampling(blocks[b].locationsHist[it-fld.levels.begin()].avg) ){
 //        		std::cout<<"\t Uniform Sampling ("<<samplesTot<<")"<<std::endl;
+        		int startX,startY, endX, endY, stepX, stepY;
+        		uniSamples(blocks[b],level,startX,startY, endX, endY, stepX, stepY,samplesTot);
 
-        		int startX = cvRound((double)(blocks[b].rect.x)/fields->shrinkage);
-        		int startY = cvRound((double)(blocks[b].rect.y)/fields->shrinkage);
-        		int endX   = std::min(cvRound((double)(blocks[b].rect.x+blocks[b].rect.width) /fields->shrinkage),
-        							  level.workRect.width);
-        		int endY   = std::min(cvRound((double)(blocks[b].rect.y+blocks[b].rect.height) /fields->shrinkage),
-        							  level.workRect.height);
-
-        		int stepX=cvRound((double)(endX-startX+1)/std::sqrt(samplesTot));
-        		if(stepX<1)
-        			stepX=1;
-
-        		int stepY=cvRound((double)(endY-startY+1)/std::sqrt(samplesTot));
-        		if(stepY<1)
-        			stepY=1;
 
                 for (int dy = startY; dy < endY; dy+=stepY)
                 {
@@ -1828,55 +2057,11 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 				std::set<Point2i,classPoint2iComp> dw;
 
 
-				cv::Mat covM; blocks[b].locationsHist[it-fld.levels.begin()].cov.copyTo(covM);
+				cv::Mat covM(2,2,CV_64FC1);blocks[b].locationsHist[it-fld.levels.begin()].cov.copyTo(covM);
+				cv::Mat avgM=blocks[b].locationsHist[it-fld.levels.begin()].avg;
 
-				for(uint round=0;round<fastModel.paramDtFast.round;round++){
+				rndSamples(level,dw,avgM,covM,samplesTot);
 
-//					std::cout<< "--- Round "<<round<<" ---";
-
-					// sampling
-					int seed=time(NULL);
-					int samplesR=samplesTot-(int)(dw.size());
-
-					double* sampling= multinormal_sample(2, samplesR, covM.ptr<double>(0),
-							blocks[b].locationsHist[it-fld.levels.begin()].avg.ptr<double>(0), &seed);
-					// print generated sampling
-//					std::cout<<" samples: "<<std::endl;
-					for(int i=0; i<samplesR;i++){
-	//					std::cout<<"["<<level.workRect.width<<","<<level.workRect.height<<"]-"<<round<<"\t("<<sampling[2*i]<< " , "<< sampling[2*i+1]<< ") --->";
-
-						// Rescale upperLeftpoints by shrinkage and check the validity
-						sampling[2*i]=  (sampling[2*i])/(fld.shrinkage);
-						sampling[2*i+1]=(sampling[2*i+1])/(fld.shrinkage);
-//						std::cout<<" ("<<sampling[2*i]<< " , "<< sampling[2*i+1]<< ") ";
-
-						int samp_X=cvRound(sampling[2*i]);
-						int samp_Y=cvRound(sampling[2*i+1]);
-
-
-						if(samp_X>=0 && samp_Y>=0 && samp_X< level.workRect.width && samp_Y<level.workRect.height){
-							dw.insert(Point2i(samp_X,samp_Y));
-//		        			std::cout<<"VALID: ("<<samp_X<< ","<<samp_Y<<")"<<std::endl;
-						}
-/*						else{
-							std::cout<<"<<< NOT VALID!! >>>"<<std::endl;
-						}
-*/
-					}
-
-					delete[] sampling;
-
-//					std::cout<<std::endl;
-//					std::cout<< "\t \t Valid sampled extracted so far: "<<dw.size()<<" of "<<samplesTot<<std::endl;
-
-					if(samplesR==0)
-						break;
-
-					if(fastModel.paramDtFast.covMExpansion){
-						covM*=((1.5)*(1.5));
-
-					}
-				}
 
 				for (std::set<Point2i >::iterator itDW=dw.begin();itDW!=dw.end();++itDW){
 					storage.offset = itDW->y * storage.step + itDW->x;
@@ -1895,10 +2080,7 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 	  */
 
 		}
-
-
-
-        	}
+   	}
 
 
 
@@ -1984,7 +2166,7 @@ void DollarNMSTrace(std::vector<cv::softcascade::Trace>& positiveTrace, bool noM
 
 
 cv::softcascade::Trace::Trace(const uint64 ind,const uint octave, const uint level, const Detection& dw, const std::vector<float>& scores, const std::vector<float>& stagesResp, const int classification)
- :index(ind),octaveIndex(octave),levelIndex(level),detection(dw.bb(),dw.confidence,dw.kind), subscores(scores),stages(stagesResp),classType(classification) {localMaxIndex=localMinIndex=-1;}
+ :index(ind),octaveIndex(octave),levelIndex(level),detection(dw.bb(),dw.confidence,dw.kind), subscores(scores),stages(stagesResp),classType(classification) {localMaxIndex=localMinIndex=0;}
 
 
 /*

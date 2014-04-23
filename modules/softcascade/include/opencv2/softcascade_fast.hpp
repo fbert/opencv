@@ -37,6 +37,7 @@ namespace cv { namespace softcascade {
 // ============================================================================================================= //
 struct CV_EXPORTS ParamDetectorFast
 {
+
 	ParamDetectorFast();
 	ParamDetectorFast(double minScale, double maxScale, uint nScale, int nMS, uint lastStage, uint gridSize,double gamma,uint round,bool exp, bool unE);
 
@@ -51,7 +52,8 @@ struct CV_EXPORTS ParamDetectorFast
 	// Linear Cascade Approximation parameter
 	uint 	lastStage;
 
-	// Geometric moedl: grid size
+	// Geometric model: grid size
+	int		geomModelType;
 	uint 	gridSize;
 	double 	gamma;
 	uint 	round;
@@ -78,6 +80,7 @@ struct CV_EXPORTS FastDtModel
 	static const char *const MODELS;
 
 	struct Block;
+	struct MixtureC;
 
 	FastDtModel(ParamDetectorFast paramDtFast, std::string dataset,uint numImages,Size imgSize);
 	FastDtModel();
@@ -98,6 +101,8 @@ struct CV_EXPORTS FastDtModel
     void addStrongWithROI(Rect dw,double rank,uint level);
     void setGridsSize(std::vector<uint> grids);
     std::vector<Block>& getBlocks4Grid(uint gridSize);
+    MixtureC& getMixtureCAtLevel(uint level){return geomModelGMM.gmm[level];};
+
     void resolveWrongStd();
     void smoothLocations();
     void saveModelIntoDat(String path,String prefix="");
@@ -215,6 +220,21 @@ struct CV_EXPORTS FastDtModel
 		double 					energy;
  	};
 
+	struct MixtureC{
+		MixtureC(){
+			avgCov=std::vector<AverageCov>();
+			mixingP=std::vector<double>();
+			energy=std::vector<double>();
+		};
+
+		std::vector<AverageCov> avgCov;
+		std::vector<double> mixingP;
+		std::vector<double> energy;
+
+	};
+
+
+
 private:
     struct TraceModel{
 #define Vx  0
@@ -289,6 +309,28 @@ private:
     	Grids	grids;
 
     }geomModel;
+
+    struct GeomModelGMM{
+    	static const char *const GEOMMODELGMM;
+    	static const char *const GEOMMODELGMM_LEVELS;
+    	static const char *const GEOMMODELGMM_LEVELS_AVG;
+    	static const char *const GEOMMODELGMM_LEVELS_COV;
+    	static const char *const GEOMMODELGMM_LEVELS_MIXC;
+    	static const char *const GEOMMODELGMM_LEVELS_ENERGY;
+
+    	GeomModelGMM(){
+    		gmm=std::vector< MixtureC>();
+
+    	}
+
+
+
+    	void write(FileStorage& fso) const;
+    	void read(const FileNode& node);
+
+    	// variables for storage input data
+    	std::vector<MixtureC> gmm;
+    }geomModelGMM;
 };
 
 
@@ -354,12 +396,13 @@ public:
 
     void generateSamples(cv::Size imgSize,std::vector<Sample>& samples);
 
-    void setExecParam(uint lastStage,  uint gridSize, double gamma,bool covExp,bool uE){
+    void setExecParam(uint lastStage,  uint gridSize, double gamma,bool covExp,bool uE, int geomModelType){
     	fastModel.paramDtFast.lastStage=lastStage;
     	fastModel.paramDtFast.gridSize=gridSize;
     	fastModel.paramDtFast.gamma=gamma;
     	fastModel.paramDtFast.covMExpansion=covExp;
     	fastModel.paramDtFast.uniformEnergy=uE;
+    	fastModel.paramDtFast.geomModelType=geomModelType;
     };
 
     static void mergeModels(std::string outPath, std::vector<std::string>& modelsPath){
@@ -392,6 +435,10 @@ public:
 
     CV_WRAP uint getNumLevels();
 private:
+
+
+    void detectFast_FIXED_GRID(std::vector<Detection>& objects, ChannelStorage& storage, Fields& fld,double pyramidSize);
+    void detectFast_GMM(std::vector<Detection>& objects, ChannelStorage& storage, Fields& fld,double pyramidSize);
 
     // Load trace-model
     CV_WRAP virtual bool loadModel(const FileNode& fastNode);

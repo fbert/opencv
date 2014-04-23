@@ -80,6 +80,14 @@ const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS
 const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_RECT="rect";
 const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_ENERGY="energy";
 
+const char *const cv::softcascade::FastDtModel::GeomModelGMM::GEOMMODELGMM="GMM_Geometry_Model";
+const char *const cv::softcascade::FastDtModel::GeomModelGMM::GEOMMODELGMM_LEVELS="Levels";
+const char *const cv::softcascade::FastDtModel::GeomModelGMM::GEOMMODELGMM_LEVELS_AVG="averages";
+const char *const cv::softcascade::FastDtModel::GeomModelGMM::GEOMMODELGMM_LEVELS_COV="covariances";
+const char *const cv::softcascade::FastDtModel::GeomModelGMM::GEOMMODELGMM_LEVELS_MIXC="mixingP";
+const char *const cv::softcascade::FastDtModel::GeomModelGMM::GEOMMODELGMM_LEVELS_ENERGY="energy";
+
+
 
 
 
@@ -984,6 +992,48 @@ void cv::softcascade::FastDtModel::GeomModel::compute(Size imgSize,uint levels){
 	}
 }
 
+void cv::softcascade::FastDtModel::GeomModelGMM::read(const FileNode& node){
+
+
+	FileNode levelsNode = node[GEOMMODELGMM_LEVELS];
+
+	gmm.clear();
+
+	std::cout<<"Reading GMM model... "<<std::endl;
+
+	for(FileNodeIterator itL=levelsNode.begin();itL!=levelsNode.end();++itL){
+
+		uint levelId=itL-levelsNode.begin();
+
+		gmm.push_back(FastDtModel::MixtureC());
+
+		if( (*itL).empty()){
+			continue;
+		}
+
+
+		FileNode avgsNode = (*itL)[GEOMMODELGMM_LEVELS_AVG];
+		FileNode covsNode = (*itL)[GEOMMODELGMM_LEVELS_COV];
+
+		(*itL)[GEOMMODELGMM_LEVELS_MIXC] >> gmm[levelId].mixingP;
+		(*itL)[GEOMMODELGMM_LEVELS_ENERGY] >> gmm[levelId].energy;
+
+		for(FileNodeIterator itA=avgsNode.begin(),itC=covsNode.begin() ;itA!=avgsNode.end();++itA,++itC){
+
+			Mat avgM(1,2,CV_64FC1);
+			Mat covM(2,2,CV_64FC1);
+
+			(*itA) >> avgM;
+			(*itC) >> covM;
+
+			gmm[levelId].avgCov.push_back(AverageCov(avgM,covM));
+		}
+	}
+}
+
+
+
+
 bool cv::softcascade::FastDtModel::getSlopeAt(uint stage,uint level,double& slope){
 	try{
 		slope= traceModel.slopes.at(stage)[level];
@@ -1021,8 +1071,9 @@ cv::softcascade::ParamDetectorFast::ParamDetectorFast()
 
 }
 cv::softcascade::ParamDetectorFast::ParamDetectorFast(double minS, double maxS, uint nS, int noMS, uint lastSt, uint gridS,double gam, uint rd,bool covExp,bool uE)
-: minScale(minS) , maxScale(maxS), nScales(nS), nMS(noMS),lastStage(lastSt), gridSize(gridS), gamma(gam), round(rd), covMExpansion(covExp), uniformEnergy(uE)
-{}
+: minScale(minS) , maxScale(maxS), nScales(nS), nMS(noMS),lastStage(lastSt), gridSize(gridS), gamma(gam), round(rd), covMExpansion(covExp), uniformEnergy(uE), geomModelType(0)
+{
+}
 
 
 cv::softcascade::FastDtModel::FastDtModel()
@@ -1070,8 +1121,9 @@ void cv::softcascade::FastDtModel::FastDtModel::write(cv::FileStorage& fso) cons
 }
 void cv::softcascade::FastDtModel::FastDtModel::read(const cv::FileNode& node){
 
-	traceModel.read(node[MODELS][TraceModel::TRACEMODEL]);
-	geomModel.read(node[MODELS][GeomModel::GEOMMODEL]);
+	//traceModel.read(node[MODELS][TraceModel::TRACEMODEL]);
+	//geomModel.read(node[MODELS][GeomModel::GEOMMODEL]);
+	geomModelGMM.read(node[MODELS][GeomModelGMM::GEOMMODELGMM]);
 }
 
 
@@ -1961,9 +2013,7 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 
 	double slope;
 */
-	uint currentSize;
 
-	std::vector<FastDtModel::Block> blocks=fastModel.getBlocks4Grid(fastModel.paramDtFast.gridSize);
 
     // only color images are suppered
     cv::Mat image = _image.getMat();
@@ -1991,9 +2041,51 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
         if (level.origScale > 2.5) break;
 
         pyramidSize+=(double)level.workRect.height*level.workRect.width;
-
     }
+
 //    std::cout<< "Size of Pyramid: "<<pyramidSize<< "dw"<< std::endl;
+
+
+    switch (fastModel.paramDtFast.geomModelType) {
+
+    // FIXED_BLOCK
+    	case 0:
+    		detectFast_FIXED_GRID(objects,storage,fld,pyramidSize);
+
+			break;
+
+	// GMM
+    	case 1:
+    		detectFast_GMM(objects,storage,fld,pyramidSize);
+
+    		break;
+    	default:
+			break;
+	}
+
+
+
+
+/*
+//-------------------------------------------------------------------
+
+//----------- Restore recjection criteria and octave'paramters ------
+	rejCriteria=tempI.rejCriteria;
+	for (uint i=0;i<fields->octaves.size();i++){
+		fields->octaves[i].index=tempI.index[i];
+		fields->octaves[i].weaks= tempI.weaks[i];
+	}
+//--------------------------------------------------------------------
+*/
+
+
+	if (rejCriteria != NO_REJECT) suppress(rejCriteria, objects);
+
+}
+void cv::softcascade::DetectorFast::detectFast_FIXED_GRID(std::vector<Detection>& objects, ChannelStorage& storage, Fields& fld,double pyramidSize){
+    typedef std::vector<Level>::const_iterator lIt;
+
+    std::vector<FastDtModel::Block> blocks=fastModel.getBlocks4Grid(fastModel.paramDtFast.gridSize);
 
 	double uEnergy=1./(fastModel.paramDtFast.gridSize*fastModel.paramDtFast.gridSize);
 
@@ -2004,7 +2096,6 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
         // we train only 3 scales.
         if (level.origScale > 2.5) break;
 
-        currentSize=objects.size();
 
         //############ Sampling by geometric model #######################
 //  std::cout<<std::endl<<"\t level "<<it - fld.levels.begin()<<std::endl;
@@ -2044,16 +2135,6 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
         	}
         	// Normal Sampling
         	else{
-/*
-	      	std::cout<<"\t Random Sampling ("<<samplesTot<<") ";
-				std::cout<<"Average("<< blocks[b].locationsHist[it-fld.levels.begin()].avg.at<double>(0,0)<<","
-										<<blocks[b].locationsHist[it-fld.levels.begin()].avg.at<double>(0,1)<<") ";
-
-				std::cout<<"Cov ("<< blocks[b].locationsHist[it-fld.levels.begin()].cov.at<double>(0,0)<<","
-										<<blocks[b].locationsHist[it-fld.levels.begin()].cov.at<double>(0,1)<<","
-										<<blocks[b].locationsHist[it-fld.levels.begin()].cov.at<double>(1,0)<<","
-										<<blocks[b].locationsHist[it-fld.levels.begin()].cov.at<double>(1,1)<<")"<<std::endl;
-*/
 				std::set<Point2i,classPoint2iComp> dw;
 
 
@@ -2068,39 +2149,62 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
 					fld.detectAt(itDW->x, itDW->y, level, storage, objects);
 				}
 			}
+		}
+   	}
+}
+void cv::softcascade::DetectorFast::detectFast_GMM(std::vector<Detection>& objects, ChannelStorage& storage, Fields& fld,double pyramidSize){
+    typedef std::vector<Level>::const_iterator lIt;
 
-	/*
-			//############# Compute the final score for each positive dw by approximation ###########
-			fastModel.getSlopeAt(lastStage,it-fld.levels.begin(),slope);
+	double uEnergy=1./(fastModel.paramDtFast.gridSize*fastModel.paramDtFast.gridSize);
 
-			for(uint i=currentSize;i<objects.size();i++){
-				objects[i].confidence+=(1024-lastStage)*slope;
+    for (lIt it = fld.levels.begin(); it != fld.levels.end(); ++it)
+    {
+        const Level& level = *it;
+
+        // we train only 3 scales.
+        if (level.origScale > 2.5) break;
+
+        uint levelId=it -fld.levels.begin();
+
+
+
+        FastDtModel::MixtureC mixC=fastModel.getMixtureCAtLevel(levelId);
+
+        for(uint cI=0;cI<mixC.avgCov.size();cI++){
+
+
+        	int samplesTot;
+
+        	if(fastModel.paramDtFast.uniformEnergy){
+        		samplesTot=cvRound(fastModel.paramDtFast.gamma*pyramidSize*uEnergy*mixC.energy[cI]);
+        	}
+        	else
+        		samplesTot=cvRound(fastModel.paramDtFast.gamma*pyramidSize*mixC.energy[cI]);
+
+        	//        	std::cout<< " n° dw to extract: "<< remainingSamp<<std::endl;
+        	if(samplesTot==0)
+        		continue;
+
+
+        	// Normal Sampling
+			std::set<Point2i,classPoint2iComp> dw;
+
+
+			cv::Mat covM(2,2,CV_64FC1);mixC.avgCov[cI].cov.copyTo(covM);
+			cv::Mat avgM=mixC.avgCov[cI].avg;
+
+			rndSamples(level,dw,avgM,covM,samplesTot);
+
+
+			for (std::set<Point2i >::iterator itDW=dw.begin();itDW!=dw.end();++itDW){
+				storage.offset = itDW->y * storage.step + itDW->x;
+				fld.detectAt(itDW->x, itDW->y, level, storage, objects);
 			}
-			//######################################################################
-	  */
 
 		}
    	}
-
-
-
-
-/*
-//-------------------------------------------------------------------
-
-//----------- Restore recjection criteria and octave'paramters ------
-	rejCriteria=tempI.rejCriteria;
-	for (uint i=0;i<fields->octaves.size();i++){
-		fields->octaves[i].index=tempI.index[i];
-		fields->octaves[i].weaks= tempI.weaks[i];
-	}
-//--------------------------------------------------------------------
-*/
-
-
-	if (rejCriteria != NO_REJECT) suppress(rejCriteria, objects);
-
 }
+
 
 
 inline uint cv::softcascade::DetectorFast::getNumLevels(){

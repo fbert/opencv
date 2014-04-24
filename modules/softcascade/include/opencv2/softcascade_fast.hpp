@@ -356,6 +356,12 @@ struct classPoint2iComp{
 
 	}
 };
+struct classPoint3iComp{
+	inline bool operator()(const Point3i& a, const Point3i& b){
+		return (a.x<=b.x)&&(a.y!=b.y)&&(a.z<=b.z);
+
+	}
+};
 
 struct CV_EXPORTS Sample{
 	enum {UNIFORM, NORMAL};
@@ -439,6 +445,7 @@ private:
 
     void detectFast_FIXED_GRID(std::vector<Detection>& objects, ChannelStorage& storage, Fields& fld,double pyramidSize);
     void detectFast_GMM(std::vector<Detection>& objects, ChannelStorage& storage, Fields& fld,double pyramidSize);
+    void detectFast_GMM_3D(std::vector<Detection>& objects, ChannelStorage& storage, Fields& fld,double pyramidSize);
 
     // Load trace-model
     CV_WRAP virtual bool loadModel(const FileNode& fastNode);
@@ -455,6 +462,7 @@ private:
 
     // generate samples by Geometric-Model
     void rndSamples(const Level& level,	std::set<Point2i,classPoint2iComp>& dw, cv::Mat& avgM, cv::Mat& covM,const int samplesTot);
+    void rndSamples_3D(std::vector<Level>::const_iterator lIt,std::vector<Level>::const_iterator endIt, std::set<Point3i,classPoint3iComp>& dw, cv::Mat& avgM, cv::Mat& covM,const int samplesTot);
     void uniSamples(const FastDtModel::Block& block, const Level& level,
     		int& startX,int& startY, int& endX, int& endY, int& stepX, int& stepY,
     		const int samplesTot);

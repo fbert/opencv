@@ -63,6 +63,13 @@ struct CV_EXPORTS ParamDetectorFast
 };
 
 
+struct classPoint2iComp{
+	inline bool operator()(const Point2i& a, const Point2i& b){
+		return (a.x<=b.x)&&(a.y!=b.y);
+
+	}
+};
+
 struct CV_EXPORTS FastDtModel
 {
 	// tag for model (xml file)
@@ -102,6 +109,7 @@ struct CV_EXPORTS FastDtModel
     void setGridsSize(std::vector<uint> grids);
     std::vector<Block>& getBlocks4Grid(uint gridSize);
     MixtureC& getMixtureCAtLevel(uint level){return geomModelGMM.gmm[level];};
+    std::set<Point2i,classPoint2iComp>& getUpperLeftPointsAtLevel(uint level){return geomModelSEG.upperLeftPoints[level];};
 
     void resolveWrongStd();
     void smoothLocations();
@@ -331,6 +339,30 @@ private:
     	// variables for storage input data
     	std::vector<MixtureC> gmm;
     }geomModelGMM;
+
+    struct GeomModelSEG{
+    	static const char *const GEOMMODELSEG;
+    	static const char *const GEOMMODELSEG_LEVELS;
+    	static const char *const GEOMMODELSEG_LEVELS_UPPERLEFTX;
+    	static const char *const GEOMMODELSEG_LEVELS_UPPERLEFTY;
+
+    	GeomModelSEG(){
+    		upperLeftPoints=std::vector< std::set<Point2i,classPoint2iComp> >();
+
+    	}
+
+
+    	void write(FileStorage& fso) const;
+    	void read(const FileNode& node);
+
+    	// variables for storage input data
+    	std::vector< std::set<Point2i,classPoint2iComp> > upperLeftPoints;
+
+    }geomModelSEG;
+
+
+
+
 };
 
 
@@ -350,12 +382,7 @@ inline void read(const cv::FileNode& node, FastDtModel& x, const FastDtModel& de
 //std::ostream& operator<<(std::ostream& out, const FastDtModel& m);
 
 
-struct classPoint2iComp{
-	inline bool operator()(const Point2i& a, const Point2i& b){
-		return (a.x<=b.x)&&(a.y!=b.y);
 
-	}
-};
 struct classPoint3iComp{
 	inline bool operator()(const Point3i& a, const Point3i& b){
 		return (a.x<=b.x)&&(a.y!=b.y)&&(a.z<=b.z);
@@ -445,7 +472,9 @@ private:
 
     void detectFast_FIXED_GRID(std::vector<Detection>& objects, ChannelStorage& storage, Fields& fld,double pyramidSize);
     void detectFast_GMM(std::vector<Detection>& objects, ChannelStorage& storage, Fields& fld,double pyramidSize);
+    void detectFast_SEG(std::vector<Detection>& objects, ChannelStorage& storage, Fields& fld,double pyramidSize);
     void detectFast_GMM_3D(std::vector<Detection>& objects, ChannelStorage& storage, Fields& fld,double pyramidSize);
+
 
     // Load trace-model
     CV_WRAP virtual bool loadModel(const FileNode& fastNode);

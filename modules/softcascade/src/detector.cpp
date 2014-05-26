@@ -80,12 +80,24 @@ const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS
 const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_RECT="rect";
 const char *const cv::softcascade::FastDtModel::GeomModel::GEOMMODEL_GRID_BLOCKS_ENERGY="energy";
 
+//------------------ GMM
 const char *const cv::softcascade::FastDtModel::GeomModelGMM::GEOMMODELGMM="GMM_Geometry_Model";
 const char *const cv::softcascade::FastDtModel::GeomModelGMM::GEOMMODELGMM_LEVELS="Levels";
 const char *const cv::softcascade::FastDtModel::GeomModelGMM::GEOMMODELGMM_LEVELS_AVG="averages";
 const char *const cv::softcascade::FastDtModel::GeomModelGMM::GEOMMODELGMM_LEVELS_COV="covariances";
 const char *const cv::softcascade::FastDtModel::GeomModelGMM::GEOMMODELGMM_LEVELS_MIXC="mixingP";
 const char *const cv::softcascade::FastDtModel::GeomModelGMM::GEOMMODELGMM_LEVELS_ENERGY="energy";
+
+//------------------ SEG
+const char *const cv::softcascade::FastDtModel::GeomModelSEG::GEOMMODELSEG="SEG_Geometry_Model";
+const char *const cv::softcascade::FastDtModel::GeomModelSEG::GEOMMODELSEG_LEVELS="Levels";
+const char *const cv::softcascade::FastDtModel::GeomModelSEG::GEOMMODELSEG_LEVELS_UPPERLEFTX="upperLeftX";
+const char *const cv::softcascade::FastDtModel::GeomModelSEG::GEOMMODELSEG_LEVELS_UPPERLEFTY="upperLeftY";
+
+
+
+
+
 
 
 
@@ -1030,6 +1042,61 @@ void cv::softcascade::FastDtModel::GeomModelGMM::read(const FileNode& node){
 		}
 	}
 }
+void cv::softcascade::FastDtModel::GeomModelSEG::read(const FileNode& node){
+
+
+	FileNode levelsNode = node[GEOMMODELSEG_LEVELS];
+
+	upperLeftPoints.clear();
+
+	std::cout<<"Reading SEG model... ";
+
+	for(FileNodeIterator itL=levelsNode.begin();itL!=levelsNode.end();++itL){
+
+		uint levelId=itL-levelsNode.begin();
+
+
+		std::set<Point2i,classPoint2iComp> dw;
+		upperLeftPoints.push_back(dw);
+
+
+		if( (*itL).empty()){
+			continue;
+		}
+
+
+		Mat upperLeftXM;
+		Mat upperLeftYM;
+		((*itL)[GEOMMODELSEG_LEVELS_UPPERLEFTX]) >> upperLeftXM;
+		((*itL)[GEOMMODELSEG_LEVELS_UPPERLEFTY]) >> upperLeftYM;
+
+
+		std::cout<<"Level:"<<levelId<<"-"<<upperLeftXM.cols<<std::endl;
+
+
+		if (upperLeftXM.cols!=upperLeftYM.cols){
+			std::cerr<<"error: Different size of X and Y points ";
+
+		}
+
+		for(int col=0; col<upperLeftXM.cols;col++){
+
+
+			double x = upperLeftXM.at<double>(0,col);
+			double y= upperLeftYM.at<double>(0,col);
+
+			if (x<0 || y<0){
+				continue;
+			}
+			upperLeftPoints[levelId].insert(Point2i(cvRound((x)/4), cvRound((y)/4)));
+		}
+
+
+
+	}
+}
+
+
 
 
 
@@ -1122,8 +1189,18 @@ void cv::softcascade::FastDtModel::FastDtModel::write(cv::FileStorage& fso) cons
 void cv::softcascade::FastDtModel::FastDtModel::read(const cv::FileNode& node){
 
 	//traceModel.read(node[MODELS][TraceModel::TRACEMODEL]);
-	//geomModel.read(node[MODELS][GeomModel::GEOMMODEL]);
-	geomModelGMM.read(node[MODELS][GeomModelGMM::GEOMMODELGMM]);
+
+	// GRID Model
+	if (!(node[MODELS][GeomModel::GEOMMODEL].empty()))
+		geomModel.read(node[MODELS][GeomModel::GEOMMODEL]);
+	// GMM Model
+	if (!(node[MODELS][GeomModelGMM::GEOMMODELGMM].empty()))
+		geomModelGMM.read(node[MODELS][GeomModelGMM::GEOMMODELGMM]);
+
+	// SEG MODEL
+	if (!(node[MODELS][GeomModelSEG::GEOMMODELSEG].empty()))
+		geomModelSEG.read(node[MODELS][GeomModelSEG::GEOMMODELSEG]);
+
 }
 
 
@@ -2113,6 +2190,10 @@ void cv::softcascade::DetectorFast::detectFast(cv::InputArray _image,std::vector
     	case 2:
     	    detectFast_GMM_3D(objects,storage,fld,pyramidSize);
     		break;
+//########################### SEGMENTATION ##########################
+    	case 3:
+    		detectFast_SEG(objects,storage,fld,pyramidSize);
+    		break;
 
     	default:
     		std::cerr<<"Type of Geometric Model unknow";
@@ -2266,6 +2347,34 @@ void cv::softcascade::DetectorFast::detectFast_GMM(std::vector<Detection>& objec
 		}
    	}
 }
+void cv::softcascade::DetectorFast::detectFast_SEG(std::vector<Detection>& objects, ChannelStorage& storage, Fields& fld,double pyramidSize){
+    typedef std::vector<Level>::const_iterator lIt;
+
+
+
+    for (lIt it = fld.levels.begin(); it != fld.levels.end(); ++it)
+    {
+        const Level& level = *it;
+
+        // we train only 3 scales.
+        if (level.origScale > 2.5) break;
+
+        uint levelId=it -fld.levels.begin();
+
+
+        // Normal Sampling
+		std::set<Point2i,classPoint2iComp>& dw= fastModel.getUpperLeftPointsAtLevel(levelId);
+
+		for (std::set<Point2i >::iterator itDW=dw.begin();itDW!=dw.end();++itDW){
+			storage.offset = itDW->y * storage.step + itDW->x;
+			fld.detectAt(itDW->x, itDW->y, level, storage, objects);
+		}
+
+   	}
+}
+
+
+
 void cv::softcascade::DetectorFast::detectFast_GMM_3D(std::vector<Detection>& objects, ChannelStorage& storage, Fields& fld,double pyramidSize){
     typedef std::vector<Level>::const_iterator lIt;
 
